@@ -12,23 +12,28 @@ def get_active_interfaces():
     for iface_name in scapy.conf.ifaces:
         iface = scapy.conf.ifaces[iface_name]
         
-        # Check for IPv4 not loopback
-        if iface.ip and iface.ip != "127.0.0.1":
+        # check for any valid IP (v4 or v6) and exclude loopbacks
+        has_ipv4 = iface.ip and iface.ip != "127.0.0.1"
+        has_ipv6 = hasattr(iface, 'ip6') and iface.ip6 and iface.ip6 != "::1"
+
+        if has_ipv4 or has_ipv6:
             active_ifaces.append({
                 "name": iface.name,
                 "description": iface.description,
-                "ip": iface.ip,
+                "ipv4": iface.ip if has_ipv4 else None,
+                "ipv6": iface.ip6 if has_ipv6 else None,
                 "mac": iface.mac
             })
             
     return active_ifaces
 
 if __name__ == "__main__":
-    print("Detecting active network interfaces...")
+    print("Detecting active network interfaces (IPv4/IPv6)...")
     interfaces = get_active_interfaces()
     
     for iface in interfaces:
         print(f"\nInterface: {iface['name']}")
         print(f"  Description: {iface['description']}")
-        print(f"  IPv4 Address: {iface['ip']}")
+        if iface['ipv4']: print(f"  IPv4 Address: {iface['ipv4']}")
+        if iface['ipv6']: print(f"  IPv6 Address: {iface['ipv6']}")
         print(f"  MAC Address: {iface['mac']}")
