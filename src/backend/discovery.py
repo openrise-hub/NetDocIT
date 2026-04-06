@@ -48,6 +48,23 @@ def get_routing_table():
             
     return routes
 
+import ipaddress
+
+def get_subnets(routes):
+    subnets = set()
+    for r in routes:
+        try:
+            # create a network object from the IP and mask
+            net = ipaddress.IPv4Network(f"{r['network']}/{r['netmask']}", strict=False)
+            
+            # exclude default route (0.0.0.0/0) and host routes (/32)
+            if net.prefixlen > 0 and net.prefixlen < 32:
+                subnets.add(str(net))
+        except ValueError:
+            continue
+            
+    return sorted(list(subnets))
+
 if __name__ == "__main__":
     print("Detecting active network interfaces (IPv4/IPv6)...")
     interfaces = get_active_interfaces()
@@ -69,4 +86,10 @@ if __name__ == "__main__":
         for dw in default_gateways:
             print(f"  - {dw['gateway']} (via {dw['interface']})")
     
+    print("\nMapping Subnets for Scanning...")
+    subnets = get_subnets(routes)
+    for sn in subnets:
+        print(f"  - {sn}")
+        
     print(f"\nTotal Routes Discovered: {len(routes)}")
+    print(f"Total Unique Subnets for Scanning: {len(subnets)}")
