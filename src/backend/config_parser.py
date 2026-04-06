@@ -1,5 +1,16 @@
-import json
-import os
+import ipaddress
+
+def validate_config(config):
+    errors = []
+    
+    # Validate subnet_tags CIDRs
+    for subnet in config.get("subnet_tags", {}):
+        try:
+            ipaddress.ip_network(subnet, strict=False)
+        except ValueError:
+            errors.append(f"Invalid subnet CIDR: {subnet}")
+            
+    return errors
 
 def load_config(config_path="data/config.json"):
     """
