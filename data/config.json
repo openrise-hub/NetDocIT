@@ -1,0 +1,10 @@
+{
+  "target_subnets": [
+    "192.168.1.0/24"
+  ],
+  "scanning_interval_minutes": 60,
+  "excluded_ips": [
+    "192.168.1.1",
+    "192.168.1.254"
+  ]
+}
