@@ -1,0 +1,7 @@
+{
+  "target_subnets": [
+  ],
+  "scanning_interval_minutes": 60,
+  "excluded_ips": [
+  ]
+}

@@ -1,0 +1,14 @@
+[project]
+name = "netdocit"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "jinja2>=3.1.6",
+    "markdown2>=2.5.5",
+    "networkx>=3.6.1",
+    "pysnmp-lextudio>=6.3.0",
+    "pyvis>=0.3.2",
+    "scapy>=2.7.0",
+]
