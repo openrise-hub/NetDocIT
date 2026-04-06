@@ -27,6 +27,27 @@ def get_active_interfaces():
             
     return active_ifaces
 
+def get_routing_table():
+    """
+    Extracts the OS routing table to identify default gateways and specific routes.
+    Returns a list of route objects.
+    """
+    routes = []
+    
+    # scapy's conf.route contains the parsed IPv4 routing table
+    for network, netmask, gateway, iface_name, local_addr, metric in scapy.conf.route.routes:
+        if local_addr != "127.0.0.1":
+            routes.append({
+                "network": scapy.ltoa(network),
+                "netmask": scapy.ltoa(netmask),
+                "gateway": gateway,
+                "interface": iface_name,
+                "local_addr": local_addr,
+                "metric": metric
+            })
+            
+    return routes
+
 if __name__ == "__main__":
     print("Detecting active network interfaces (IPv4/IPv6)...")
     interfaces = get_active_interfaces()
@@ -37,3 +58,15 @@ if __name__ == "__main__":
         if iface['ipv4']: print(f"  IPv4 Address: {iface['ipv4']}")
         if iface['ipv6']: print(f"  IPv6 Address: {iface['ipv6']}")
         print(f"  MAC Address: {iface['mac']}")
+
+    print("\nExtracting Routing Table (IPv4)...")
+    routes = get_routing_table()
+    
+    default_gateways = [r for r in routes if r['network'] == "0.0.0.0" and r['netmask'] == "0.0.0.0"]
+    
+    if default_gateways:
+        print("\nDefault Gateways Found:")
+        for dw in default_gateways:
+            print(f"  - {dw['gateway']} (via {dw['interface']})")
+    
+    print(f"\nTotal Routes Discovered: {len(routes)}")
