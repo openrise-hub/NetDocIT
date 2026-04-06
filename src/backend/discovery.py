@@ -65,31 +65,31 @@ def get_subnets(routes):
             
     return sorted(list(subnets))
 
-if __name__ == "__main__":
-    print("Detecting active network interfaces (IPv4/IPv6)...")
+def discover_all():
     interfaces = get_active_interfaces()
-    
-    for iface in interfaces:
-        print(f"\nInterface: {iface['name']}")
-        print(f"  Description: {iface['description']}")
-        if iface['ipv4']: print(f"  IPv4 Address: {iface['ipv4']}")
-        if iface['ipv6']: print(f"  IPv6 Address: {iface['ipv6']}")
-        print(f"  MAC Address: {iface['mac']}")
-
-    print("\nExtracting Routing Table (IPv4)...")
     routes = get_routing_table()
-    
-    default_gateways = [r for r in routes if r['network'] == "0.0.0.0" and r['netmask'] == "0.0.0.0"]
-    
-    if default_gateways:
-        print("\nDefault Gateways Found:")
-        for dw in default_gateways:
-            print(f"  - {dw['gateway']} (via {dw['interface']})")
-    
-    print("\nMapping Subnets for Scanning...")
     subnets = get_subnets(routes)
-    for sn in subnets:
+    
+    return {
+        "interfaces": interfaces,
+        "routes": routes,
+        "subnets": subnets,
+        "gateways": [r['gateway'] for r in routes if r['network'] == "0.0.0.0"]
+    }
+
+if __name__ == "__main__":
+    print("NetDocIT Environment Discovery Engine")
+    print("=" * 40)
+    
+    discovery = discover_all()
+    
+    print(f"Interfaces Detected: {len(discovery['interfaces'])}")
+    for iface in discovery['interfaces']:
+        print(f"  - {iface['name']} ({iface['ipv4'] or 'No IPv4'})")
+        
+    print(f"\nSubnets Identified for Scanning: {len(discovery['subnets'])}")
+    for sn in discovery['subnets']:
         print(f"  - {sn}")
         
-    print(f"\nTotal Routes Discovered: {len(routes)}")
-    print(f"Total Unique Subnets for Scanning: {len(subnets)}")
+    if discovery['gateways']:
+        print(f"\nDefault Gateway: {discovery['gateways'][0]}")
