@@ -31,6 +31,26 @@ class TopologyManager:
     def get_stats(self):
         return f"Topology built: {self.graph.number_of_nodes()} nodes, {self.graph.number_of_edges()} edges."
 
+    def display_tui(self):
+        from rich import print as rprint
+        from rich.tree import Tree
+        
+        # terminal tree root
+        tree = Tree("[bold cyan]Network Discovery Tree[/bold cyan]")
+        
+        # traverse host interfaces
+        for iface in self.graph.neighbors("Host"):
+            label = self.graph.nodes[iface].get('label', iface)
+            branch = tree.add(f"[bold green]Interface:[/bold green] {label}")
+            
+            # add associated subnets
+            for subnet in self.graph.neighbors(iface):
+                if subnet == "Host": continue
+                sub_label = self.graph.nodes[subnet].get('label', subnet)
+                branch.add(f"[bold yellow]Subnet:[/bold yellow] {sub_label}")
+                
+        rprint(tree)
+
 if __name__ == "__main__":
     tm = TopologyManager()
     temp = {
@@ -40,3 +60,4 @@ if __name__ == "__main__":
     }
     tm.build_from_discovery(temp)
     print(tm.get_stats())
+    tm.display_tui()
