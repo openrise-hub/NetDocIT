@@ -66,11 +66,14 @@ def get_subnets(routes):
     return sorted(list(subnets))
 
 from .config_parser import load_config
-from .database import init_db, save_interface
+from .database import init_db, save_interface, clear_interfaces
 from .processor import process_discovered_subnets, get_missing_subnets, get_priority_subnets
 
 def discover_all():
     init_db()
+    
+    # refresh local adapters before capturing the current state
+    clear_interfaces()
     
     interfaces = get_active_interfaces()
     routes = get_routing_table()
