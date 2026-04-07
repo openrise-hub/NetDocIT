@@ -29,7 +29,9 @@ env/
 venv/
 ENV/
 
-# NetDocIT specific
+# specific ignores
+data/config.json
+data/*.sqlite
 data/*.sqlite3
 data/*.json-journal
 data/mock_*.json

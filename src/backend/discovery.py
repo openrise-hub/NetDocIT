@@ -66,19 +66,29 @@ def get_subnets(routes):
     return sorted(list(subnets))
 
 from .config_parser import load_config
+from .database import init_db, save_interface, save_subnet
 
 def discover_all():
+    init_db()
+    
     interfaces = get_active_interfaces()
     routes = get_routing_table()
     subnets = get_subnets(routes)
     config = load_config()
     
-    # map friendly names to subnets using tags from config.json
+    # save each detected interface to the database
+    for iface in interfaces:
+        save_interface(iface)
+    
+    # map friendly names and persist to database
     tagged_subnets = []
     for sn in subnets:
+        tag = config.get("subnet_tags", {}).get(sn, "Unlabeled Network")
+        save_subnet(sn, tag)
+        
         tagged_subnets.append({
             "cidr": sn,
-            "tag": config.get("subnet_tags", {}).get(sn, "Unlabeled Network")
+            "tag": tag
         })
     
     return {
