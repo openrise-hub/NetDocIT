@@ -3,5 +3,6 @@
     "snmp": []
   },
   "subnet_tags": {},
-  "exclusions": []
+  "exclusions": [],
+  "scan_interval_hours": 24
 }
