@@ -66,11 +66,14 @@ def get_subnets(routes):
     return sorted(list(subnets))
 
 from .config_parser import load_config
-from .database import init_db, save_interface
-from .processor import process_discovered_subnets, get_missing_subnets
+from .database import init_db, save_interface, clear_interfaces
+from .processor import process_discovered_subnets, get_missing_subnets, get_priority_subnets
 
 def discover_all():
     init_db()
+    
+    # refresh local adapters before capturing the current state
+    clear_interfaces()
     
     interfaces = get_active_interfaces()
     routes = get_routing_table()
@@ -92,6 +95,7 @@ def discover_all():
     # process discovers to find brand-new or missing networks
     new_found = process_discovered_subnets(raw_subnets)
     missing = get_missing_subnets(raw_subnets)
+    priorities = get_priority_subnets(raw_subnets)
     
     return {
         "interfaces": interfaces,
@@ -99,6 +103,7 @@ def discover_all():
         "subnets": raw_subnets,
         "new": new_found,
         "missing": missing,
+        "priorities": priorities,
         "gateways": [r['gateway'] for r in routes if r['network'] == "0.0.0.0"]
     }
 
@@ -116,6 +121,12 @@ if __name__ == "__main__":
     for sn_obj in discovery['subnets']:
         status = " [NEW]" if sn_obj['cidr'] in discovery['new'] else ""
         print(f"  - {sn_obj['cidr']} ({sn_obj['tag']}){status}")
+    
+    print(f"\nScan Recommendations:")
+    for tier in ["high", "medium", "low"]:
+        targets = discovery['priorities'][tier]
+        if targets:
+            print(f"  {tier.upper()}: {', '.join(targets)}")
         
     if discovery['missing']:
         print(f"\nMissing Networks (Offline): {len(discovery['missing'])}")
