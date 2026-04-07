@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from .database import get_all_subnets, save_subnet, get_last_scans
 from .config_parser import load_config
 
@@ -28,8 +29,37 @@ def get_missing_subnets(discovered):
     
     return list(existing_cidrs - discovered_cidrs)
 
+def get_priority_subnets(discovered):
+    config = load_config()
+    interval = config.get("scan_interval_hours", 24)
+    
+    last_scans = get_last_scans()
+    now = datetime.now()
+    threshold = now - timedelta(hours=interval)
+    
+    priorities = {"high": [], "medium": [], "low": []}
+    
+    for sn in discovered:
+        cidr = sn['cidr']
+        last_scan_str = last_scans.get(cidr)
+        
+        if last_scan_str is None:
+            priorities["high"].append(cidr)
+        else:
+            try:
+                # sqlite stores timestamps as strings
+                last_scan_dt = datetime.fromisoformat(last_scan_str)
+                if last_scan_dt < threshold:
+                    priorities["medium"].append(cidr)
+                else:
+                    priorities["low"].append(cidr)
+            except (ValueError, TypeError):
+                priorities["high"].append(cidr)
+                
+    return priorities
+
 def get_system_status():
-    # summary of scan readiness
+    """Returns a summary of the current network inventory and scan readiness."""
     config = load_config()
     subnets = get_all_subnets()
     last_scans = get_last_scans()
@@ -54,3 +84,6 @@ if __name__ == "__main__":
     
     brand_new = process_discovered_subnets(temp_discovery)
     print(f"New networks: {brand_new}")
+    
+    prios = get_priority_subnets(temp_discovery)
+    print(f"Scan Priorities: {prios}")

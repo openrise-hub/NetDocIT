@@ -94,14 +94,13 @@ def save_subnet(cidr, tag):
         conn.commit()
 
 def get_all_subnets():
-    """Fetches all known subnets from the database."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('SELECT cidr FROM subnets')
         return [row[0] for row in cursor.fetchall()]
 
 def get_last_scans():
-    # fetch latest scan timestamps for subnets
+    """Returns the latest scan timestamp for each known subnet."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
@@ -112,9 +111,19 @@ def get_last_scans():
         ''')
         return {row[0]: row[1] for row in cursor.fetchall()}
 
+def clear_interfaces():
+    """Clears out old network adapters to start a fresh scan."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM interfaces')
+        conn.commit()
+
 if __name__ == "__main__":
     print(f"Checking database at {DB_PATH}...")
     init_db()
     
     subnets = get_all_subnets()
     print(f"Known Subnets: {subnets}")
+    
+    scans = get_last_scans()
+    print(f"Latest Scans: {scans}")
