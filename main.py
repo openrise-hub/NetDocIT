@@ -4,10 +4,28 @@ from src.backend.database import insert_devices, get_devices_sorted_by_ip, get_d
 from src.presentation.topology import TopologyManager
 from src.presentation.exporter import MarkdownGenerator
 
-def main():
-    print("NetDocIT")
-    print("=" * 40)
+from src.presentation.exporter import MarkdownGenerator
+
+def show_dashboard():
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.text import Text
     
+    console = Console()
+    console.clear()
+    
+    # build the interactive dashboard
+    menu_text = Text()
+    menu_text.append("[D]iscover ", style="bold green")
+    menu_text.append("| [M]ap only ", style="bold cyan")
+    menu_text.append("| [R]eport only ", style="bold yellow")
+    menu_text.append("| [Q]uit", style="bold red")
+    
+    console.print(Panel(menu_text, title="[bold white]NetDocIT Dashboard[/bold white]", border_style="green"))
+    choice = console.input("\nSelect an action: ").upper()
+    return choice
+
+def run_discovery():
     discovery = discover_all()
     
     # seed and fetch device data for the report
@@ -32,18 +50,23 @@ def main():
     # generate html inventory dashboard
     rep.save_html(len(discovery['subnets']), dev_stats, devices, "inventory.html")
     
-    status = get_system_status()
+    return discovery
+
+def main():
+    choice = show_dashboard()
     
-    print("\nReadiness Report:")
-    print(f"  Subnets Tracked:    {status['subnet_count']}")
-    print(f"  New (Unscanned):    {status['never_scanned']}")
-    print(f"  Credentials:        {'Available' if status['credentials_loaded'] else 'None'}")
-    print(f"  Topology Map:       Saved to {html_out}")
+    if choice == 'D':
+        discovery = run_discovery()
+        status = get_system_status()
+        
+        print("\nReadiness Report:")
+        print(f"  Subnets Tracked:    {status['subnet_count']}")
+        print(f"  New (Unscanned):    {status['never_scanned']}")
+        print(f"  Credentials:        {'Available' if status['credentials_loaded'] else 'None'}")
+        print(f"  Topology Map:       Saved to topology.html")
     
-    if status['ready_for_scan']:
-        print("\nStatus: Ready for Active Scanning")
-    else:
-        print("\nStatus: Critical | No subnets found for scanning")
+    elif choice == 'Q':
+        print("Exiting NetDocIT.")
 
 if __name__ == "__main__":
     main()
