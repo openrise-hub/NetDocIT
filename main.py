@@ -12,12 +12,17 @@ def main():
     tm.build_from_discovery(discovery)
     tm.display_tui()
     
+    # export interactive html map
+    html_out = "topology.html"
+    tm.save_html_map(html_out)
+    
     status = get_system_status()
     
     print("\nReadiness Report:")
     print(f"  Subnets Tracked:    {status['subnet_count']}")
     print(f"  New (Unscanned):    {status['never_scanned']}")
     print(f"  Credentials:        {'Available' if status['credentials_loaded'] else 'None'}")
+    print(f"  Topology Map:       Saved to {html_out}")
     
     if status['ready_for_scan']:
         print("\nStatus: Ready for Active Scanning")
