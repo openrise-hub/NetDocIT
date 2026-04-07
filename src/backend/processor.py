@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from .database import get_all_subnets, save_subnet, get_last_scans
+from .config_parser import load_config
 
 def process_discovered_subnets(discovered):
     """
@@ -29,9 +30,12 @@ def get_missing_subnets(discovered):
     return list(existing_cidrs - discovered_cidrs)
 
 def get_priority_subnets(discovered):
+    config = load_config()
+    interval = config.get("scan_interval_hours", 24)
+    
     last_scans = get_last_scans()
     now = datetime.now()
-    threshold = now - timedelta(hours=24)
+    threshold = now - timedelta(hours=interval)
     
     priorities = {"high": [], "medium": [], "low": []}
     
