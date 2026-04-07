@@ -17,6 +17,16 @@ class MarkdownGenerator:
         self.content.append(f"- **Windows Hosts:** {device_stats['windows']}")
         self.content.append(f"- **Network Appliances:** {device_stats['appliances']}\n")
 
+    def add_device_table(self, devices):
+        # generate the active device inventory table
+        self.add_header("Active Device Inventory", 2)
+        self.content.append("| IP Address | Hostname | OS / Type | MAC Address |")
+        self.content.append("|------------|----------|-----------|-------------|")
+        
+        for ip, mac, host, os_val, vendor in devices:
+            self.content.append(f"| {ip} | {host} | {os_val} | {mac} |")
+        self.content.append("")
+
     def save(self, filename="REPORT.md"):
         with open(filename, "w", encoding="utf-8") as f:
             f.write("\n".join(self.content))
