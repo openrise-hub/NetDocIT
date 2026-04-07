@@ -93,7 +93,16 @@ def save_subnet(cidr, tag):
         ''', (cidr, tag))
         conn.commit()
 
+def get_all_subnets():
+    """Fetches all known subnets from the database."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT cidr FROM subnets')
+        return [row[0] for row in cursor.fetchall()]
+
 if __name__ == "__main__":
-    print(f"Initializing database at {DB_PATH}...")
+    print(f"Checking database at {DB_PATH}...")
     init_db()
-    print("Tables \"Interfaces\" and \"Subnets\") created successfully.")
+    
+    subnets = get_all_subnets()
+    print(f"Known Subnets: {subnets}")
