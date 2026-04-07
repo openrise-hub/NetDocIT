@@ -1,4 +1,5 @@
-from .database import get_all_subnets, save_subnet
+from datetime import datetime, timedelta
+from .database import get_all_subnets, save_subnet, get_last_scans
 
 def process_discovered_subnets(discovered):
     """
@@ -27,6 +28,32 @@ def get_missing_subnets(discovered):
     
     return list(existing_cidrs - discovered_cidrs)
 
+def get_priority_subnets(discovered):
+    last_scans = get_last_scans()
+    now = datetime.now()
+    threshold = now - timedelta(hours=24)
+    
+    priorities = {"high": [], "medium": [], "low": []}
+    
+    for sn in discovered:
+        cidr = sn['cidr']
+        last_scan_str = last_scans.get(cidr)
+        
+        if last_scan_str is None:
+            priorities["high"].append(cidr)
+        else:
+            try:
+                # sqlite stores timestamps as strings
+                last_scan_dt = datetime.fromisoformat(last_scan_str)
+                if last_scan_dt < threshold:
+                    priorities["medium"].append(cidr)
+                else:
+                    priorities["low"].append(cidr)
+            except (ValueError, TypeError):
+                priorities["high"].append(cidr)
+                
+    return priorities
+
 if __name__ == "__main__":
     # todo(Andrick): discovery collection
     temp_discovery = [
@@ -36,3 +63,6 @@ if __name__ == "__main__":
     
     brand_new = process_discovered_subnets(temp_discovery)
     print(f"New networks: {brand_new}")
+    
+    prios = get_priority_subnets(temp_discovery)
+    print(f"Scan Priorities: {prios}")
