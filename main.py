@@ -4,7 +4,26 @@ from src.backend.database import insert_devices, get_devices_sorted_by_ip, get_d
 from src.presentation.topology import TopologyManager
 from src.presentation.exporter import MarkdownGenerator
 
-from src.presentation.exporter import MarkdownGenerator
+def install_scheduler():
+    import subprocess
+    import os
+    
+    # get current directory and command
+    cwd = os.getcwd()
+    task_name = "NetDocIT-DailyDiscovery"
+    cmd = f'uv run netdocit discover --quiet'
+    
+    # execute windows schtasks to register the daily 8am scan
+    # /sc daily /st 08:00 /f (force overwrite)
+    try:
+        subprocess.run([
+            "schtasks", "/create", "/tn", task_name,
+            "/tr", f'cmd /c "cd /d {cwd} && {cmd}"',
+            "/sc", "daily", "/st", "08:00", "/f"
+        ], check=True, capture_output=True)
+        return True
+    except subprocess.CalledProcessError:
+        return False
 
 QUIET = False
 
