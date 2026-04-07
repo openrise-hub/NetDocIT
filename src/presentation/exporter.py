@@ -31,6 +31,26 @@ class MarkdownGenerator:
         with open(filename, "w", encoding="utf-8") as f:
             f.write("\n".join(self.content))
 
+    def save_html(self, subnet_count, dev_stats, devices, filename="inventory.html"):
+        from jinja2 import Environment, FileSystemLoader
+        
+        # setup jinja2 to load the template folder
+        template_dir = os.path.join(os.path.dirname(__file__), 'templates')
+        env = Environment(loader=FileSystemLoader(template_dir))
+        template = env.get_template('inventory.html')
+        
+        # render the data into the dashboard
+        output = template.render(
+            timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            subnet_count=subnet_count,
+            windows_count=dev_stats['windows'],
+            appliance_count=dev_stats['appliances'],
+            devices=devices
+        )
+        
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(output)
+
 if __name__ == "__main__":
     gen = MarkdownGenerator()
     gen.add_summary_section(2, {"windows": 2, "appliances": 2})

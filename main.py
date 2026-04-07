@@ -29,6 +29,9 @@ def main():
     rep.add_device_table(devices)
     rep.save("REPORT.md")
     
+    # generate html inventory dashboard
+    rep.save_html(len(discovery['subnets']), dev_stats, devices, "inventory.html")
+    
     status = get_system_status()
     
     print("\nReadiness Report:")
