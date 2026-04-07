@@ -118,6 +118,42 @@ def clear_interfaces():
         cursor.execute('DELETE FROM interfaces')
         conn.commit()
 
+def insert_devices():
+    # seed devices for report testing
+    devices = [
+        ("192.168.1.1", "00:11:22:33:44:55", "Gateway-Core", "Cisco IOS", "Cisco"),
+        ("192.168.1.101", "AA:BB:CC:DD:EE:F1", "Desktop-Work", "Windows 11", "Microsoft"),
+        ("192.168.1.102", "AA:BB:CC:DD:EE:F2", "Laptop-Remote", "Windows 10", "Microsoft"),
+        ("192.168.1.50", "11:22:33:44:55:66", "Printer-Dept", "Embedded OS", "HP")
+    ]
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.executemany('''
+            INSERT OR IGNORE INTO devices (ip, mac, hostname, os, vendor)
+            VALUES (?, ?, ?, ?, ?)
+        ''', devices)
+        conn.commit()
+
+def get_devices_sorted_by_ip():
+    # fetch all devices sorted numerically by IP
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT ip, mac, hostname, os, vendor FROM devices ORDER BY ip ASC')
+        return cursor.fetchall()
+
+def get_device_counts_by_os():
+    # count windows hosts vs network appliances
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT 
+                SUM(CASE WHEN os LIKE "%Windows%" THEN 1 ELSE 0 END) as windows_count,
+                SUM(CASE WHEN os NOT LIKE "%Windows%" THEN 1 ELSE 0 END) as appliance_count
+            FROM devices
+        ''')
+        row = cursor.fetchone()
+        return {"windows": row[0] or 0, "appliances": row[1] or 0}
+
 if __name__ == "__main__":
     print(f"Checking database at {DB_PATH}...")
     init_db()
