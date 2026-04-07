@@ -45,6 +45,7 @@ def show_dashboard():
     menu_text.append("[D]iscover ", style="bold green")
     menu_text.append("| [M]ap only ", style="bold cyan")
     menu_text.append("| [R]eport only ", style="bold yellow")
+    menu_text.append("| [S]chedule daily ", style="bold magenta")
     menu_text.append("| [Q]uit", style="bold red")
     
     console.print(Panel(menu_text, title="[bold white]NetDocIT Dashboard[/bold white]", border_style="green"))
@@ -140,6 +141,12 @@ def main():
     elif choice in ['R', 'report']:
         run_reporting()
         q_print("\nReports updated: REPORT.md / inventory.html")
+    
+    elif choice == 'S':
+        if install_scheduler():
+            q_print("\nSuccess: Daily 08:00 AM scan registered in Task Scheduler.")
+        else:
+            q_print("\nError: Failed to register task. Ensure you have the required permissions.")
     
     elif choice == 'Q':
         q_print("Exiting.")
