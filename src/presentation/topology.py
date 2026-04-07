@@ -51,6 +51,14 @@ class TopologyManager:
                 
         rprint(tree)
 
+    def save_html_map(self, output_path="index.html"):
+        from pyvis.network import Network
+        
+        # translate networkx graph to interactive html
+        net = Network(notebook=False, directed=False, heading="NetDocIT Topology")
+        net.from_nx(self.graph)
+        net.save_graph(output_path)
+
 if __name__ == "__main__":
     tm = TopologyManager()
     temp = {
@@ -61,3 +69,4 @@ if __name__ == "__main__":
     tm.build_from_discovery(temp)
     print(tm.get_stats())
     tm.display_tui()
+    tm.save_html_map("test_map.html")
