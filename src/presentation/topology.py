@@ -6,12 +6,29 @@ class TopologyManager:
         
     def build_from_discovery(self, discovery_summary):
         # local scanning host (Root node)
-        self.graph.add_node("Host", type="server", label="NetDocIT Host")
+        self.graph.add_node(
+            "Host", 
+            type="server", 
+            label="NetDocIT Host",
+            shape="star",
+            color="#e74c3c",
+            size=30
+        )
         
         # find active host interfaces
         for iface in discovery_summary.get('interfaces', []):
             iface_id = f"iface:{iface['name']}"
-            self.graph.add_node(iface_id, type="interface", label=f"{iface['name']} ({iface['ipv4']})")
+            
+            # format ip nicely for the label
+            str_ip = iface['ipv4'] if iface['ipv4'] else "No IP"
+            self.graph.add_node(
+                iface_id, 
+                type="interface", 
+                label=f"{iface['name']}\n{str_ip}",
+                shape="dot",
+                color="#3498db",
+                size=20
+            )
             self.graph.add_edge("Host", iface_id)
             
             # map subnets to their interfaces
@@ -25,7 +42,14 @@ class TopologyManager:
                             tag = sn['tag']
                             break
                     
-                    self.graph.add_node(subnet_id, type="subnet", label=f"{tag} ({route['network']})")
+                    self.graph.add_node(
+                        subnet_id, 
+                        type="subnet", 
+                        label=f"{tag}\n{route['network']}",
+                        shape="database",
+                        color="#2ecc71",
+                        size=25
+                    )
                     self.graph.add_edge(iface_id, subnet_id)
 
     def get_stats(self):
