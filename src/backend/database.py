@@ -111,6 +111,17 @@ def get_last_scans():
         ''')
         return {row[0]: row[1] for row in cursor.fetchall()}
 
+def get_all_interfaces():
+    # fetch all local host interfaces from storage
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT name, description, ipv4, ipv6, mac FROM interfaces')
+        return [{"name": r[0], "description": r[1], "ipv4": r[2], "ipv6": r[3], "mac": r[4]} for r in cursor.fetchall()]
+
+def get_all_routes():
+    # fetch the routing table (empty for now) todo: ANDRICK update this
+    return []
+
 def clear_interfaces():
     """Clears out old network adapters to start a fresh scan."""
     with get_db_connection() as conn:
