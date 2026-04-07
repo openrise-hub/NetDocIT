@@ -79,7 +79,17 @@ class TopologyManager:
         from pyvis.network import Network
         
         # translate networkx graph to interactive html
-        net = Network(notebook=False, directed=False, heading="NetDocIT Topology")
+        net = Network(notebook=False, directed=False, heading="NetDocIT Topology", height="800px", width="100%")
+        
+        # configure physics to prevent overlap
+        net.repulsion(
+            node_distance=150,
+            central_gravity=0.2,
+            spring_length=200,
+            spring_strength=0.05,
+            damping=0.09
+        )
+        
         net.from_nx(self.graph)
         net.save_graph(output_path)
 
