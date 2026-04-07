@@ -10,5 +10,6 @@ dependencies = [
     "networkx>=3.6.1",
     "pysnmp-lextudio>=6.3.0",
     "pyvis>=0.3.2",
+    "rich>=14.3.3",
     "scapy>=2.7.0",
 ]
