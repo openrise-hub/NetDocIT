@@ -111,6 +111,13 @@ def get_last_scans():
         ''')
         return {row[0]: row[1] for row in cursor.fetchall()}
 
+def clear_interfaces():
+    """Clears out old network adapters to start a fresh scan."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM interfaces')
+        conn.commit()
+
 if __name__ == "__main__":
     print(f"Checking database at {DB_PATH}...")
     init_db()
