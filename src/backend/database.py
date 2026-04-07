@@ -100,6 +100,18 @@ def get_all_subnets():
         cursor.execute('SELECT cidr FROM subnets')
         return [row[0] for row in cursor.fetchall()]
 
+def get_last_scans():
+    # fetch latest scan timestamps for subnets
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT s.cidr, MAX(sc.timestamp)
+            FROM subnets s
+            LEFT JOIN scans sc ON s.id = sc.subnet_id
+            GROUP BY s.cidr
+        ''')
+        return {row[0]: row[1] for row in cursor.fetchall()}
+
 if __name__ == "__main__":
     print(f"Checking database at {DB_PATH}...")
     init_db()

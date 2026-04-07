@@ -1,4 +1,5 @@
-from .database import get_all_subnets, save_subnet
+from .database import get_all_subnets, save_subnet, get_last_scans
+from .config_parser import load_config
 
 def process_discovered_subnets(discovered):
     """
@@ -26,6 +27,23 @@ def get_missing_subnets(discovered):
     existing_cidrs = set(get_all_subnets())
     
     return list(existing_cidrs - discovered_cidrs)
+
+def get_system_status():
+    # summary of scan readiness
+    config = load_config()
+    subnets = get_all_subnets()
+    last_scans = get_last_scans()
+    
+    # check scan based on networks and config
+    has_subnets = len(subnets) > 0
+    has_creds = len(config.get("credentials", {}).get("snmp", [])) > 0
+    
+    return {
+        "subnet_count": len(subnets),
+        "never_scanned": list(last_scans.values()).count(None),
+        "credentials_loaded": has_creds,
+        "ready_for_scan": has_subnets
+    }
 
 if __name__ == "__main__":
     # todo(Andrick): discovery collection
