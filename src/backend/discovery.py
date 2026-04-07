@@ -65,15 +65,26 @@ def get_subnets(routes):
             
     return sorted(list(subnets))
 
+from .config_parser import load_config
+
 def discover_all():
     interfaces = get_active_interfaces()
     routes = get_routing_table()
     subnets = get_subnets(routes)
+    config = load_config()
+    
+    # map friendly names to subnets using tags from config.json
+    tagged_subnets = []
+    for sn in subnets:
+        tagged_subnets.append({
+            "cidr": sn,
+            "tag": config.get("subnet_tags", {}).get(sn, "Unlabeled Network")
+        })
     
     return {
         "interfaces": interfaces,
         "routes": routes,
-        "subnets": subnets,
+        "subnets": tagged_subnets,
         "gateways": [r['gateway'] for r in routes if r['network'] == "0.0.0.0"]
     }
 
@@ -88,8 +99,8 @@ if __name__ == "__main__":
         print(f"  - {iface['name']} ({iface['ipv4'] or 'No IPv4'})")
         
     print(f"\nSubnets Identified for Scanning: {len(discovery['subnets'])}")
-    for sn in discovery['subnets']:
-        print(f"  - {sn}")
+    for sn_obj in discovery['subnets']:
+        print(f"  - {sn_obj['cidr']} [{sn_obj['tag']}]")
         
     if discovery['gateways']:
         print(f"\nDefault Gateway: {discovery['gateways'][0]}")
