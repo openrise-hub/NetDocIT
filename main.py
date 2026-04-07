@@ -52,21 +52,61 @@ def run_discovery():
     
     return discovery
 
-def main():
-    choice = show_dashboard()
+from src.backend.database import insert_devices, get_devices_sorted_by_ip, get_device_counts_by_os, get_all_subnets, get_all_interfaces, get_all_routes
+
+def run_mapping(discovery_data=None):
+    # build and display topology map
+    if discovery_data is None:
+        # fetch data from storage if not provided by a fresh scan
+        discovery_data = {
+            "interfaces": get_all_interfaces(),
+            "routes": get_all_routes(),
+            "subnets": [{"cidr": c, "tag": "Stored Database"} for c in get_all_subnets()]
+        }
     
-    if choice == 'D':
+    tm = TopologyManager()
+    tm.build_from_discovery(discovery_data)
+    tm.display_tui()
+    tm.save_html_map("topology.html")
+
+def run_reporting():
+    # generate reports from existing storage
+    devices = get_devices_sorted_by_ip()
+    dev_stats = get_device_counts_by_os()
+    subnets = get_all_subnets()
+    
+    rep = MarkdownGenerator()
+    rep.add_summary_section(len(subnets), dev_stats)
+    rep.add_device_table(devices)
+    rep.save("REPORT.md")
+    rep.save_html(len(subnets), dev_stats, devices, "inventory.html")
+
+def main():
+    import sys
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="NetDocIT Terminal Dashboard")
+    parser.add_argument("command", nargs="?", choices=["discover", "report", "map", "all"], help="Subcommand to run")
+    args = parser.parse_args()
+    
+    # if no command is passed, launch the interactive dashboard
+    choice = args.command if args.command else show_dashboard()
+    
+    if choice in ['D', 'discover', 'all']:
         discovery = run_discovery()
-        status = get_system_status()
+        run_mapping(discovery)
+        run_reporting()
+    
+    elif choice in ['M', 'map']:
+        run_mapping()
+        print("\nMap updated: topology.html")
         
-        print("\nReadiness Report:")
-        print(f"  Subnets Tracked:    {status['subnet_count']}")
-        print(f"  New (Unscanned):    {status['never_scanned']}")
-        print(f"  Credentials:        {'Available' if status['credentials_loaded'] else 'None'}")
-        print(f"  Topology Map:       Saved to topology.html")
+    elif choice in ['R', 'report']:
+        run_reporting()
+        print("\nReports updated: REPORT.md / inventory.html")
     
     elif choice == 'Q':
-        print("Exiting NetDocIT.")
+        print("Exiting.")
 
 if __name__ == "__main__":
     main()
