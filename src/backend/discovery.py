@@ -66,25 +66,39 @@ def get_subnets(routes):
     return sorted(list(subnets))
 
 from .config_parser import load_config
+from .database import init_db, save_interface
+from .processor import process_discovered_subnets, get_missing_subnets
 
 def discover_all():
+    init_db()
+    
     interfaces = get_active_interfaces()
     routes = get_routing_table()
     subnets = get_subnets(routes)
     config = load_config()
     
-    # map friendly names to subnets using tags from config.json
-    tagged_subnets = []
+    # save each detected interface to the database
+    for iface in interfaces:
+        save_interface(iface)
+    
+    # map friendly names and identify changes
+    raw_subnets = []
     for sn in subnets:
-        tagged_subnets.append({
+        raw_subnets.append({
             "cidr": sn,
             "tag": config.get("subnet_tags", {}).get(sn, "Unlabeled Network")
         })
     
+    # process discovers to find brand-new or missing networks
+    new_found = process_discovered_subnets(raw_subnets)
+    missing = get_missing_subnets(raw_subnets)
+    
     return {
         "interfaces": interfaces,
         "routes": routes,
-        "subnets": tagged_subnets,
+        "subnets": raw_subnets,
+        "new": new_found,
+        "missing": missing,
         "gateways": [r['gateway'] for r in routes if r['network'] == "0.0.0.0"]
     }
 
@@ -100,7 +114,13 @@ if __name__ == "__main__":
         
     print(f"\nSubnets Identified for Scanning: {len(discovery['subnets'])}")
     for sn_obj in discovery['subnets']:
-        print(f"  - {sn_obj['cidr']} [{sn_obj['tag']}]")
+        status = " [NEW]" if sn_obj['cidr'] in discovery['new'] else ""
+        print(f"  - {sn_obj['cidr']} ({sn_obj['tag']}){status}")
         
+    if discovery['missing']:
+        print(f"\nMissing Networks (Offline): {len(discovery['missing'])}")
+        for sn in discovery['missing']:
+            print(f"  - {sn}")
+
     if discovery['gateways']:
         print(f"\nDefault Gateway: {discovery['gateways'][0]}")
