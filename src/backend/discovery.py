@@ -67,22 +67,31 @@ def get_subnets(routes):
 
 from .config_parser import load_config
 from .database import init_db, save_interface, clear_interfaces
-from .processor import process_discovered_subnets, get_missing_subnets, get_priority_subnets
+from src.backend.database import get_last_scans, clear_interfaces, get_all_subnets
+from src.backend.processor import process_discovered_subnets, get_missing_subnets, get_priority_subnets
+from src.backend.scanner import run_ps_script
 
 def discover_all():
-    init_db()
-    
-    # refresh local adapters before capturing the current state
+    # unified entry point for environmental mapping
     clear_interfaces()
     
     interfaces = get_active_interfaces()
     routes = get_routing_table()
     subnets = get_subnets(routes)
-    config = load_config()
     
-    # save each detected interface to the database
-    for iface in interfaces:
-        save_interface(iface)
+    # execute live scanning cores
+    scan_results = run_ps_script("ping_sweep.ps1")
+    
+    summary = {
+        "interfaces": interfaces,
+        "routes": routes,
+        "subnets": subnets,
+        "scan_data": scan_results if "error" not in scan_results else []
+    }
+    
+    return summary
+
+def report_readiness():
     
     # map friendly names and identify changes
     raw_subnets = []
