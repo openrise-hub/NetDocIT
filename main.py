@@ -1,6 +1,6 @@
 from src.backend.discovery import discover_all
 from src.backend.processor import get_system_status
-from src.backend.database import insert_devices, get_devices_sorted_by_ip, get_device_counts_by_os
+from src.backend.database import ingest_live_data, get_devices_sorted_by_ip, get_device_counts_by_os
 from src.presentation.topology import TopologyManager
 from src.presentation.exporter import MarkdownGenerator
 
@@ -55,8 +55,9 @@ def show_dashboard():
 def run_discovery():
     discovery = discover_all()
     
-    # seed and fetch device data for the report
-    insert_devices()
+    # ingest live scan data into the database
+    ingest_live_data(discovery)
+    
     devices = get_devices_sorted_by_ip()
     dev_stats = get_device_counts_by_os()
     
@@ -81,7 +82,7 @@ def run_discovery():
     
     return discovery
 
-from src.backend.database import insert_devices, get_devices_sorted_by_ip, get_device_counts_by_os, get_all_subnets, get_all_interfaces, get_all_routes
+from src.backend.database import ingest_live_data, get_devices_sorted_by_ip, get_device_counts_by_os, get_all_subnets, get_all_interfaces, get_all_routes
 
 def run_mapping(discovery_data=None):
     # build and display topology map

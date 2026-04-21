@@ -66,33 +66,63 @@ def get_subnets(routes):
     return sorted(list(subnets))
 
 from .config_parser import load_config
-from .database import init_db, save_interface, clear_interfaces
+from .database import init_db, save_interface, clear_interfaces, get_last_scans, get_all_subnets
 from .processor import process_discovered_subnets, get_missing_subnets, get_priority_subnets
+from .scanner import run_ps_script
+from .snmp_engine import scan_appliances
 
 def discover_all():
-    init_db()
-    
-    # refresh local adapters before capturing the current state
+    # unified entry point for environmental mapping
     clear_interfaces()
     
     interfaces = get_active_interfaces()
     routes = get_routing_table()
     subnets = get_subnets(routes)
-    config = load_config()
     
-    # save each detected interface to the database
-    for iface in interfaces:
-        save_interface(iface)
+    # execute live scanning cores
+    scan_results = run_ps_script("ping_sweep.ps1", args=subnets)
+    
+    # attempt host enumeration (WMI/CIM) for all found IPs
+    found_ips = []
+    if isinstance(scan_results, list):
+        found_ips = [dev['ip'] for dev in scan_results if 'ip' in dev]
+        
+    host_details = []
+    snmp_details = []
+    if found_ips:
+        host_details = run_ps_script("host_enum.ps1", args=found_ips)
+        snmp_details = scan_appliances(found_ips)
+    
+    # generate the readiness report
+    report = report_readiness(interfaces, routes, subnets)
+    
+    summary = {
+        "interfaces": interfaces,
+        "routes": routes,
+        "subnets": report["subnets"],
+        "new": report["new"],
+        "missing": report["missing"],
+        "priorities": report["priorities"],
+        "gateways": report["gateways"],
+        "scan_data": scan_results if isinstance(scan_results, list) else [],
+        "host_data": host_details if isinstance(host_details, list) else [],
+        "snmp_data": snmp_details
+    }
+    
+    return summary
+
+def report_readiness(interfaces, routes, subnets):
+    config = load_config()
     
     # map friendly names and identify changes
     raw_subnets = []
     for sn in subnets:
         raw_subnets.append({
             "cidr": sn,
-            "tag": config.get("subnet_tags", {}).get(sn, "Unlabeled Network")
+            "tag": config.get("subnet_tags", {}).get(sn, "unlabeled network")
         })
     
-    # process discovers to find brand-new or missing networks
+    # process discoveries to find brand-new or missing networks
     new_found = process_discovered_subnets(raw_subnets)
     missing = get_missing_subnets(raw_subnets)
     priorities = get_priority_subnets(raw_subnets)

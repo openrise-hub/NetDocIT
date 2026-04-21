@@ -129,20 +129,50 @@ def clear_interfaces():
         cursor.execute('DELETE FROM interfaces')
         conn.commit()
 
-def insert_devices():
-    # seed devices for report testing
-    devices = [
-        ("192.168.1.1", "00:11:22:33:44:55", "Gateway-Core", "Cisco IOS", "Cisco"),
-        ("192.168.1.101", "AA:BB:CC:DD:EE:F1", "Desktop-Work", "Windows 11", "Microsoft"),
-        ("192.168.1.102", "AA:BB:CC:DD:EE:F2", "Laptop-Remote", "Windows 10", "Microsoft"),
-        ("192.168.1.50", "11:22:33:44:55:66", "Printer-Dept", "Embedded OS", "HP")
+def ingest_live_data(summary):
+    """Parses live scan, cim, and snmp data and inserts it into the database."""
+    devices_map = {}
+    
+    # base network scan (ping sweep & arp)
+    for dev in summary.get('scan_data', []):
+        devices_map[dev['ip']] = {
+            "ip": dev['ip'],
+            "mac": dev.get('mac', 'Unknown'),
+            "hostname": dev.get('hostname', 'Active-Host'),
+            "os": dev.get('os', 'Unknown'),
+            "vendor": dev.get('vendor', 'Detected-Live')
+        }
+        
+    # add Windows WMI/CIM enumeration details
+    for host in summary.get('host_data', []):
+        ip = host['ip']
+        if ip in devices_map:
+            devices_map[ip]["hostname"] = host.get("hostname", devices_map[ip]["hostname"])
+            devices_map[ip]["os"] = host.get("os", devices_map[ip]["os"])
+            devices_map[ip]["vendor"] = host.get("vendor", devices_map[ip]["vendor"])
+            
+    # add generic SNMP appliance details
+    for snmp in summary.get('snmp_data', []):
+        ip = snmp['ip']
+        if ip in devices_map:
+            devices_map[ip]["hostname"] = snmp.get("sysName", devices_map[ip]["hostname"])
+            devices_map[ip]["os"] = snmp.get("sysDescr", devices_map[ip]["os"])
+            
+    # insert unified data into storage
+    devices_tuples = [
+        (d["ip"], d["mac"], d["hostname"], d["os"], d["vendor"])
+        for d in devices_map.values()
     ]
+    
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        
+        cursor.execute('DELETE FROM devices')
+        
         cursor.executemany('''
             INSERT OR IGNORE INTO devices (ip, mac, hostname, os, vendor)
             VALUES (?, ?, ?, ?, ?)
-        ''', devices)
+        ''', devices_tuples)
         conn.commit()
 
 def get_devices_sorted_by_ip():
