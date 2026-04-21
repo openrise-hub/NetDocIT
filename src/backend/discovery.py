@@ -80,28 +80,36 @@ def discover_all():
     subnets = get_subnets(routes)
     
     # execute live scanning cores
-    scan_results = run_ps_script("ping_sweep.ps1")
+    scan_results = run_ps_script("ping_sweep.ps1", args=subnets)
+    
+    # generate the readiness report
+    report = report_readiness(interfaces, routes, subnets)
     
     summary = {
         "interfaces": interfaces,
         "routes": routes,
-        "subnets": subnets,
+        "subnets": report["subnets"],
+        "new": report["new"],
+        "missing": report["missing"],
+        "priorities": report["priorities"],
+        "gateways": report["gateways"],
         "scan_data": scan_results if "error" not in scan_results else []
     }
     
     return summary
 
-def report_readiness():
+def report_readiness(interfaces, routes, subnets):
+    config = load_config()
     
     # map friendly names and identify changes
     raw_subnets = []
     for sn in subnets:
         raw_subnets.append({
             "cidr": sn,
-            "tag": config.get("subnet_tags", {}).get(sn, "Unlabeled Network")
+            "tag": config.get("subnet_tags", {}).get(sn, "unlabeled network")
         })
     
-    # process discovers to find brand-new or missing networks
+    # process discoveries to find brand-new or missing networks
     new_found = process_discovered_subnets(raw_subnets)
     missing = get_missing_subnets(raw_subnets)
     priorities = get_priority_subnets(raw_subnets)

@@ -1,16 +1,28 @@
-# NetDocIT Host Enumerator - Andrick: Paste your logic here
-# output must be a json array of objects
+param(
+    [string[]]$IPs
+)
 
-# todo: implement CIM/WMI enumeration (feature 6.2)
+# host enumerator
 $results = @()
 
-# placeholder for host details
-# $results += [PSCustomObject]@{
-#     ip       = "192.168.1.101"
-#     hostname = "WS-PROD-01"
-#     os       = "Windows 11 Pro"
-#     build    = "22621"
-# }
+foreach ($ip in $IPs) {
+    try {
+        # gather os and system info via cim
+        $os = Get-CimInstance -ClassName Win32_OperatingSystem -ComputerName $ip -ErrorAction Stop -OperationTimeoutSec 5
+        $cs = Get-CimInstance -ClassName Win32_ComputerSystem -ComputerName $ip -ErrorAction Stop -OperationTimeoutSec 5
+        
+        $obj = New-Object PSObject -Property @{
+            ip       = $ip
+            hostname = $os.CSName
+            os       = $os.Caption
+            build    = $os.Version
+            vendor   = $cs.Manufacturer
+        }
+        $results += $obj
+    } catch {
+        continue
+    }
+}
 
-# convert to json for the python core
+# return json output
 Write-Output ($results | ConvertTo-Json -Compress)
