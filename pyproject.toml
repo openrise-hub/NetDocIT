@@ -18,3 +18,7 @@ dependencies = [
 netdocit = "main:main"
 
 [tool.uv]
+
+[tool.pyright]
+include = ["src", "main.py"]
+extraPaths = ["."]
