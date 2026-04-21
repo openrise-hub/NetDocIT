@@ -66,10 +66,10 @@ def get_subnets(routes):
     return sorted(list(subnets))
 
 from .config_parser import load_config
-from .database import init_db, save_interface, clear_interfaces
-from src.backend.database import get_last_scans, clear_interfaces, get_all_subnets
-from src.backend.processor import process_discovered_subnets, get_missing_subnets, get_priority_subnets
-from src.backend.scanner import run_ps_script
+from .database import init_db, save_interface, clear_interfaces, get_last_scans, get_all_subnets
+from .processor import process_discovered_subnets, get_missing_subnets, get_priority_subnets
+from .scanner import run_ps_script
+from .snmp_engine import scan_appliances
 
 def discover_all():
     # unified entry point for environmental mapping
@@ -88,8 +88,10 @@ def discover_all():
         found_ips = [dev['ip'] for dev in scan_results if 'ip' in dev]
         
     host_details = []
+    snmp_details = []
     if found_ips:
         host_details = run_ps_script("host_enum.ps1", args=found_ips)
+        snmp_details = scan_appliances(found_ips)
     
     # generate the readiness report
     report = report_readiness(interfaces, routes, subnets)
@@ -103,7 +105,8 @@ def discover_all():
         "priorities": report["priorities"],
         "gateways": report["gateways"],
         "scan_data": scan_results if isinstance(scan_results, list) else [],
-        "host_data": host_details if isinstance(host_details, list) else []
+        "host_data": host_details if isinstance(host_details, list) else [],
+        "snmp_data": snmp_details
     }
     
     return summary
