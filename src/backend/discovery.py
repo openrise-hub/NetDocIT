@@ -82,6 +82,15 @@ def discover_all():
     # execute live scanning cores
     scan_results = run_ps_script("ping_sweep.ps1", args=subnets)
     
+    # attempt host enumeration (WMI/CIM) for all found IPs
+    found_ips = []
+    if isinstance(scan_results, list):
+        found_ips = [dev['ip'] for dev in scan_results if 'ip' in dev]
+        
+    host_details = []
+    if found_ips:
+        host_details = run_ps_script("host_enum.ps1", args=found_ips)
+    
     # generate the readiness report
     report = report_readiness(interfaces, routes, subnets)
     
@@ -93,7 +102,8 @@ def discover_all():
         "missing": report["missing"],
         "priorities": report["priorities"],
         "gateways": report["gateways"],
-        "scan_data": scan_results if "error" not in scan_results else []
+        "scan_data": scan_results if isinstance(scan_results, list) else [],
+        "host_data": host_details if isinstance(host_details, list) else []
     }
     
     return summary
