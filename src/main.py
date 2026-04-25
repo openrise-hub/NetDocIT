@@ -197,9 +197,12 @@ def main():
                                     d = run_discovery(app=app, community=args.community)
                                     run_mapping(d)
                                     run_reporting()
-                                except Exception:
-                                    pass
-                                app.state = "MENU"
+                                except Exception as exc:
+                                    from .backend.database import add_log_entry
+                                    add_log_entry("ERROR", f"Discovery workflow failed: {exc}", "Scanner")
+                                    app.add_log(f"[ERROR] Discovery workflow failed: {exc}")
+                                finally:
+                                    app.state = "MENU"
 
                             threading.Thread(target=run, daemon=True).start()
                         elif key == '2':
