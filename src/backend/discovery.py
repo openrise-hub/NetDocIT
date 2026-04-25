@@ -42,23 +42,28 @@ def discover_all(community_override=None, log_fn=None):
     log("Initializing local interface database...")
     clear_interfaces()
     
-    log("Identifying active network adapters...")
+    log("identifying active network adapters...")
     interfaces = get_active_interfaces()
-    log(f"Found {len(interfaces)} active interfaces.")
+    if interfaces:
+        log(f"found {len(interfaces)} adapters: {', '.join([i.get('name','') for i in interfaces])}")
     
-    log("Parsing OS routing table...")
+    log("parsing os routing table...")
     routes = get_routing_table()
     subnets = get_subnets(routes)
-    log(f"Mapping {len(subnets)} subnets for scanning.")
+    log(f"mapping {len(subnets)} subnets: {', '.join(subnets)}")
     
     # execute live scanning cores
-    log("Starting ICMP Ping Sweep across subnets...")
+    log("starting icmp ping sweep across subnets...")
     scan_results = run_ps_script("ping_sweep.ps1", args=subnets)
     
-    # attempt host enumeration (WMI/CIM) for all found IPs
+    if isinstance(scan_results, dict) and "error" in scan_results:
+        log(f"scanner error: {scan_results['error']}")
+        scan_results = []
+    
+    # attempt host enumeration (wmi/cim) for all found ips
     found_ips = []
     if isinstance(scan_results, list):
-        log(f"Ping sweep found {len(scan_results)} responsive endpoints.")
+        log(f"ping sweep found {len(scan_results)} responsive endpoints.")
         # Resolve vendors for ping results
         for dev in scan_results:
             if 'mac' in dev:
@@ -122,6 +127,7 @@ if __name__ == "__main__":
     print("NetDocIT Environment Discovery Engine")
     print("=" * 40)
     
+    add_log_entry("info", "starting automated network discovery", "scanner")
     discovery = discover_all()
     
     print(f"Interfaces Detected: {len(discovery['interfaces'])}")

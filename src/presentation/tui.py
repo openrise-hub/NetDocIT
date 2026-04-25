@@ -90,12 +90,18 @@ class DashboardApp:
         elif self.state == "LOGS":
             from rich.table import Table
             table = Table(box=None, expand=True)
-            table.add_column("Timestamp", style="dim", width=12)
+            table.add_column("Level", style="dim", width=10)
             table.add_column("Message")
-            for entry in self.log_buffer[-20:]:
-                parts = entry.split(" ", 1)
-                table.add_row(parts[0], parts[1])
-            return Panel(table, title="[bold blue]Session Audit Logs[/bold blue]", border_style="blue")
+            
+            for l in self.log_buffer:
+                level = "info"
+                msg = l
+                if "]" in l:
+                    level = l.split("]", 1)[0].replace("[", "").strip().lower()
+                    msg = l.split("]", 1)[1].strip()
+                
+                table.add_row(f"[{level}]", msg)
+            return Panel(table, title="audit logs", border_style="blue")
         
         return Panel("View Not Implemented", title="Error")
 

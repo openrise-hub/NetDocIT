@@ -14,9 +14,10 @@ def run_ps_script(script_name, args=None):
         cmd.extend(args)
 
     try:
-        # capture output and parse json results
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=60)
         return json.loads(result.stdout)
+    except subprocess.TimeoutExpired:
+        return [] # return empty on timeout
     except subprocess.CalledProcessError as e:
         return {"error": f"Script failed: {e.stderr}"}
     except json.JSONDecodeError:
