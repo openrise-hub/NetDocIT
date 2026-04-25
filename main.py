@@ -165,7 +165,10 @@ def main():
     if not cmd_list:
         from presentation.tui import DashboardApp
         from rich.live import Live
+        import threading
+        
         app = DashboardApp()
+        scan_thread = None
 
         with Live(app.render(), console=app.console, screen=True, auto_refresh=False) as live:
             while True:
@@ -173,17 +176,24 @@ def main():
                 key = get_key()
                 
                 if key == 'q': break
-                elif key == '1': # trigger automated scan
-                    app.state = "SCANNING"
-                    live.update(app.render())
-                    discovery = run_discovery(app=app, community=args.community)
-                    run_mapping(discovery)
-                    run_reporting()
-                    app.state = "MENU"
+                elif key == '1': # trigger background automated scan
+                    if app.state != "SCANNING":
+                        app.state = "SCANNING"
+                        def run_bg_scan():
+                            discovery = run_discovery(app=app, community=args.community)
+                            run_mapping(discovery)
+                            run_reporting()
+                            app.state = "MENU"
+                        
+                        scan_thread = threading.Thread(target=run_bg_scan, daemon=True)
+                        scan_thread.start()
+                        
                 elif key == '2': # show device inventory table
+                    from backend.database import get_devices_sorted_by_ip
                     app.state = "INVENTORY"
                     app.devices = get_devices_sorted_by_ip()
                 elif key == '3': # view session audit logs
+                    from backend.database import get_logs
                     app.state = "LOGS"
                     db_logs = get_logs(20)
                     app.log_buffer = [f"[{l}] {m}" for t,l,m,s in reversed(db_logs)]
