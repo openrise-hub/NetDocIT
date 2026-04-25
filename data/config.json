@@ -1,6 +1,6 @@
 {
   "credentials": {
-    "snmp": []
+    "snmp": ["public", "private", "scandoc", "admin", "monitor", "snmp", "read", "read-only", "manager"]
   },
   "subnet_tags": {},
   "exclusions": [],
