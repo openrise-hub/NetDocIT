@@ -79,11 +79,23 @@ class DashboardApp:
             # windowed slice of the device list
             visible_devices = self.devices[self.scroll_index : self.scroll_index + 20]
             for dev in visible_devices:
+                if isinstance(dev, dict):
+                    ip_val = dev.get('ip', '?.?.?.?')
+                    mac_val = dev.get('mac', 'N/A')
+                    vendor_val = dev.get('vendor', 'Unknown')
+                    system_val = f"{dev.get('type', 'Device')} ({dev.get('os', 'Unknown')})"
+                else:
+                    ip_val = dev[0] if len(dev) > 0 else '?.?.?.?'
+                    mac_val = dev[1] if len(dev) > 1 else 'N/A'
+                    os_val = dev[3] if len(dev) > 3 else 'Unknown'
+                    vendor_val = dev[4] if len(dev) > 4 else 'Unknown'
+                    system_val = f"Device ({os_val})"
+
                 table.add_row(
-                    dev.get('ip', '?.?.?.?'),
-                    dev.get('mac', 'N/A'),
-                    dev.get('vendor', 'Unknown'),
-                    f"{dev.get('type', 'Device')} ({dev.get('os', 'Unknown')})"
+                    ip_val,
+                    mac_val,
+                    vendor_val,
+                    system_val
                 )
             return Panel(table, title=f"[bold cyan]Inventory ({self.scroll_index}-{self.scroll_index + len(visible_devices)} of {len(self.devices)})[/bold cyan]", border_style="cyan")
 
@@ -129,6 +141,9 @@ class DashboardApp:
             
         l["footer"].update(f"[dim] {hints} [/dim]")
         return l
+
+    def render(self):
+        return self.__rich__()
 
 if __name__ == "__main__":
     app = DashboardApp()
