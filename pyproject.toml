@@ -21,4 +21,4 @@ netdocit = "main:main"
 
 [tool.pyright]
 include = ["src", "main.py"]
-extraPaths = ["."]
+extraPaths = ["src"]
