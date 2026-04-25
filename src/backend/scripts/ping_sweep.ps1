@@ -1,5 +1,5 @@
 param(
-    [string[]]$Subnets
+    [string[]]$Subnets = @()
 )
 
 function Expand-Subnet($cidr) {
@@ -32,49 +32,60 @@ function Expand-Subnet($cidr) {
         return $ips
     }
 
-    $targets = @()
-    foreach ($s in $Subnets) { $targets += Expand-Subnet $s }
-
-    $responds = @()
-    if ($targets.Count -gt 0) {
-        $taskList = New-Object System.Collections.Generic.List[System.Threading.Tasks.Task[System.Net.NetworkInformation.PingReply]]
-        foreach ($ip in $targets) {
-            $p = New-Object System.Net.NetworkInformation.Ping
-            $taskList.Add($p.SendPingAsync($ip, 1000))
-        }
-
-        [System.Threading.Tasks.Task]::WaitAll($taskList.ToArray())
-
-        for ($i = 0; $i -lt $taskList.Count; $i++) {
-            if ($taskList[$i].Status -eq 'RanToCompletion' -and $taskList[$i].Result.Status -eq 'Success') {
-                $responds += $targets[$i]
-            }
-        }
+    for ($i = ($network + 1); $i -le ($broadcast - 1); $i++) {
+        $nextBytes = [BitConverter]::GetBytes([uint32]$i)
+        if ([BitConverter]::IsLittleEndian) { [Array]::Reverse($nextBytes) }
+        $ips += ([System.Net.IPAddress]$nextBytes).IPAddress
     }
 
-    $results = @()
-    $neighbors = Get-NetNeighbor -AddressFamily IPv4
-    $arpTable = arp -a | Out-String
+    return $ips
+}
 
-    foreach ($ip in $responds) {
-        # try get-netneighbor
-        $n = $neighbors | Where-Object { $_.IPAddress -eq $ip } | Select-Object -First 1
-        $mac = "Unknown"
-        if ($n) { 
-            $mac = $n.LinkLayerAddress 
-        } 
-        elseif ($arpTable -match "$ip\s+([0-9a-fA-F-]{17})") {
-            # fallback to arp -a parsing
-            $mac = $Matches[1]
-        }
-    
-        $results += [PSCustomObject]@{
-            ip     = [string]$ip
-            mac    = [string]$mac
-            os     = "Unknown"
-            vendor = "Detected-Live"
-        }
+$targets = @()
+foreach ($s in $Subnets) { $targets += Expand-Subnet $s }
+
+$responds = @()
+if ($targets.Count -gt 0) {
+    $taskList = New-Object System.Collections.Generic.List[System.Threading.Tasks.Task[System.Net.NetworkInformation.PingReply]]
+    foreach ($ip in $targets) {
+        $p = New-Object System.Net.NetworkInformation.Ping
+        $taskList.Add($p.SendPingAsync($ip, 1000))
     }
 
-    # convert to json for the python core
+    [System.Threading.Tasks.Task]::WaitAll($taskList.ToArray())
+
+    for ($i = 0; $i -lt $taskList.Count; $i++) {
+        if ($taskList[$i].Status -eq 'RanToCompletion' -and $taskList[$i].Result.Status -eq 'Success') {
+            $responds += $targets[$i]
+        }
+    }
+}
+
+$results = @()
+$neighbors = Get-NetNeighbor -AddressFamily IPv4
+$arpTable = arp -a | Out-String
+
+foreach ($ip in $responds) {
+    $n = $neighbors | Where-Object { $_.IPAddress -eq $ip } | Select-Object -First 1
+    $mac = "Unknown"
+    if ($n) {
+        $mac = $n.LinkLayerAddress
+    }
+    elseif ($arpTable -match "$ip\s+([0-9a-fA-F-]{17})") {
+        $mac = $Matches[1]
+    }
+
+    $results += [PSCustomObject]@{
+        ip     = [string]$ip
+        mac    = [string]$mac
+        os     = "Unknown"
+        vendor = "Detected-Live"
+    }
+}
+
+if ($results.Count -eq 0) {
+    Write-Output "[]"
+}
+else {
     Write-Output ($results | ConvertTo-Json -Compress)
+}
