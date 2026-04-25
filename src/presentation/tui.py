@@ -130,6 +130,9 @@ class DashboardApp:
         l["footer"].update(f"[dim] {hints} [/dim]")
         return l
 
+    def render(self):
+        return self.__rich__()
+
 if __name__ == "__main__":
     app = DashboardApp()
     app.console.print(app.render())
