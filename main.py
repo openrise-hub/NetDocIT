@@ -121,6 +121,16 @@ def run_reporting():
 
 __version__ = "0.1.0"
 
+import msvcrt
+import time
+
+def get_key():
+    # capture a single keypress for windows hotkeys
+    if msvcrt.kbhit():
+        try: return msvcrt.getch().decode('utf-8').lower()
+        except: return None
+    return None
+
 def main():
     import sys
     import argparse
@@ -150,8 +160,57 @@ def main():
         logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
     
     cmd_list = args.command
-    choice = cmd_list[0].lower() if cmd_list else show_dashboard()
     
+    # if no command list, enter reactive dashboard loop
+    if not cmd_list:
+        from presentation.tui import DashboardApp
+        from rich.live import Live
+        import threading
+        app = DashboardApp()
+        try:
+            with Live(app, console=app.console, screen=True, auto_refresh=True, refresh_per_second=10) as live:
+                while True:
+                    if msvcrt.kbhit():
+                        try:
+                            res = msvcrt.getch()
+                            key = res.decode('utf-8').lower()
+                        except UnicodeDecodeError:
+                            key = None
+                        
+                        if key == 'q': break
+                        elif key == '1' and app.state != "SCANNING":
+                            app.state = "SCANNING"
+                            def run():
+                                try:
+                                    d = run_discovery(app=app, community=args.community)
+                                    run_mapping(d)
+                                    run_reporting()
+                                except: pass
+                                app.state = "MENU"
+                            threading.Thread(target=run, daemon=True).start()
+                        elif key == '2':
+                            from backend.database import get_devices_sorted_by_ip
+                            app.state = "INVENTORY"
+                            app.devices = get_devices_sorted_by_ip()
+                            app.scroll_index = 0
+                        elif key == 'w' and app.state == "INVENTORY":
+                            app.scroll_index = max(0, app.scroll_index - 5)
+                        elif key == 's' and app.state == "INVENTORY":
+                            if app.scroll_index + 20 < len(app.devices):
+                                app.scroll_index += 5
+                        elif key == '3':
+                            from backend.database import get_logs
+                            app.state = "LOGS"
+                            logs = get_logs(20)
+                            app.log_buffer = [f"[{l}] {m}" for t,l,m,s in reversed(logs)]
+                        elif key == '\x1b':
+                            app.state = "MENU"
+                    time.sleep(0.05)
+        except KeyboardInterrupt: pass
+        return
+
+    # handle direct cli command execution
+    choice = cmd_list[0].lower()
     sched_time = args.time
     if choice == 'schedule' and len(cmd_list) > 1:
         sched_time = cmd_list[1]

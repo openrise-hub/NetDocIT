@@ -24,49 +24,57 @@ function Expand-Subnet($cidr) {
     $ips = @()
     # Point-to-point behavior for /31 and /32
     if ($prefix -ge 31) {
-        $ips += $ipString
+        for ($i = ($network + 1); $i -le ($broadcast - 1); $i++) {
+            $nextBytes = [BitConverter]::GetBytes([uint32]$i)
+            if ([BitConverter]::IsLittleEndian) { [Array]::Reverse($nextBytes) }
+            $ips += ([System.Net.IPAddress]$nextBytes).IPAddress
+        }
         return $ips
     }
+
+    $targets = @()
+    foreach ($s in $Subnets) { $targets += Expand-Subnet $s }
+
+    $responds = @()
+    if ($targets.Count -gt 0) {
+        $taskList = New-Object System.Collections.Generic.List[System.Threading.Tasks.Task[System.Net.NetworkInformation.PingReply]]
+        foreach ($ip in $targets) {
+            $p = New-Object System.Net.NetworkInformation.Ping
+            $taskList.Add($p.SendPingAsync($ip, 1000))
+        }
+
+        [System.Threading.Tasks.Task]::WaitAll($taskList.ToArray())
+
+        for ($i = 0; $i -lt $taskList.Count; $i++) {
+            if ($taskList[$i].Status -eq 'RanToCompletion' -and $taskList[$i].Result.Status -eq 'Success') {
+                $responds += $targets[$i]
+            }
+        }
+    }
+
+    $results = @()
+    $neighbors = Get-NetNeighbor -AddressFamily IPv4
+    $arpTable = arp -a | Out-String
+
+    foreach ($ip in $responds) {
+        # try get-netneighbor
+        $n = $neighbors | Where-Object { $_.IPAddress -eq $ip } | Select-Object -First 1
+        $mac = "Unknown"
+        if ($n) { 
+            $mac = $n.LinkLayerAddress 
+        } 
+        elseif ($arpTable -match "$ip\s+([0-9a-fA-F-]{17})") {
+            # fallback to arp -a parsing
+            $mac = $Matches[1]
+        }
     
-    # Standard range generation (Network+1 to Broadcast-1)
-    for ($i = ($network + 1); $i -lt $broadcast; $i++) {
-        $nextBytes = [BitConverter]::GetBytes([uint32]$i)
-        if ([BitConverter]::IsLittleEndian) { [Array]::Reverse($nextBytes) }
-        $ips += ([System.Net.IPAddress]$nextBytes).IPAddress
-    }
-    return $ips
-}
-
-$targets = @()
-foreach ($s in $Subnets) { $targets += Expand-Subnet $s }
-
-# perform parallel ping sweep using jobs
-$jobs = @()
-if ($targets.Count -gt 0) {
-    foreach ($ip in $targets) {
-        $jobs += Test-Connection -ComputerName $ip -Count 1 -AsJob
+        $results += [PSCustomObject]@{
+            ip     = [string]$ip
+            mac    = [string]$mac
+            os     = "Unknown"
+            vendor = "Detected-Live"
+        }
     }
 
-    # wait for pings to finish
-    Wait-Job $jobs -Timeout 15 | Out-Null
-    $responds = Receive-Job $jobs | Where-Object { $_.Status -eq "Success" -or $_.ResponseTime -ne $null } | Select-Object -ExpandProperty Address
-    Remove-Job $jobs -Force
-}
-
-# correlate responding ips with mac addresses
-$results = @()
-$neighbors = Get-NetNeighbor -AddressFamily IPv4
-foreach ($ip in $responds) {
-    if ($ip -notmatch '^\d') { continue }
-    $n = $neighbors | Where-Object { $_.IPAddress -eq $ip }
-    $results += [PSCustomObject]@{
-        ip       = $ip
-        mac      = if ($n) { $n.LinkLayerAddress } else { "Unknown" }
-        hostname = "Active-Host"
-        os       = "Unknown"
-        vendor   = "Detected-Live"
-    }
-}
-
-# convert to json for the python core
-Write-Output ($results | ConvertTo-Json -Compress)
+    # convert to json for the python core
+    Write-Output ($results | ConvertTo-Json -Compress)
