@@ -1,68 +1,30 @@
-import scapy.all as scapy
+import ipaddress
+from .scanner import run_ps_script
 
 def get_active_interfaces():
-    """
-    Identifies all active IPv4 network interfaces on the host.
-    Returns a list of interface objects with their IP addresses.
-    """
-    active_ifaces = []
-    
-    # scapy's conf.ifaces stores all detected interfaces on the system
-    # filter for those that have a valid IPv4 address and are not loopback
-    for iface_name in scapy.conf.ifaces:
-        iface = scapy.conf.ifaces[iface_name]
-        
-        # check for any valid IP (v4 or v6) and exclude loopbacks
-        has_ipv4 = iface.ip and iface.ip != "127.0.0.1"
-        has_ipv6 = hasattr(iface, 'ip6') and iface.ip6 and iface.ip6 != "::1"
-
-        if has_ipv4 or has_ipv6:
-            active_ifaces.append({
-                "name": iface.name,
-                "description": iface.description,
-                "ipv4": iface.ip if has_ipv4 else None,
-                "ipv6": iface.ip6 if has_ipv6 else None,
-                "mac": iface.mac
-            })
-            
-    return active_ifaces
+    res = run_ps_script("env_discovery.ps1")
+    if isinstance(res, dict): return res.get("interfaces", [])
+    return []
 
 def get_routing_table():
-    """
-    Extracts the OS routing table to identify default gateways and specific routes.
-    Returns a list of route objects.
-    """
-    routes = []
-    
-    # scapy's conf.route contains the parsed IPv4 routing table
-    for network, netmask, gateway, iface_name, local_addr, metric in scapy.conf.route.routes:
-        if local_addr != "127.0.0.1":
-            routes.append({
-                "network": scapy.ltoa(network),
-                "netmask": scapy.ltoa(netmask),
-                "gateway": gateway,
-                "interface": iface_name,
-                "local_addr": local_addr,
-                "metric": metric
-            })
-            
-    return routes
-
-import ipaddress
+    res = run_ps_script("env_discovery.ps1")
+    if isinstance(res, dict): return res.get("routes", [])
+    return []
 
 def get_subnets(routes):
     subnets = set()
     for r in routes:
         try:
-            # create a network object from the IP and mask
-            net = ipaddress.IPv4Network(f"{r['network']}/{r['netmask']}", strict=False)
-            
-            # exclude default route (0.0.0.0/0) and host routes (/32)
+            # use destination prefix directly if available
+            if "prefix_len" in r:
+                net = ipaddress.IPv4Network(f"{r['network']}/{r['prefix_len']}", strict=False)
+            else:
+                continue
+                
             if net.prefixlen > 0 and net.prefixlen < 32:
                 subnets.add(str(net))
         except ValueError:
             continue
-            
     return sorted(list(subnets))
 
 from .config_parser import load_config
@@ -72,20 +34,31 @@ from .scanner import run_ps_script
 from .snmp_engine import scan_appliances
 from .vendor_lookup import resolve_vendor
 
-def discover_all(community_override=None):
+def discover_all(community_override=None, log_fn=None):
+    def log(msg):
+        if log_fn: log_fn(msg)
+
     # unified entry point for environmental mapping
+    log("Initializing local interface database...")
     clear_interfaces()
     
+    log("Identifying active network adapters...")
     interfaces = get_active_interfaces()
+    log(f"Found {len(interfaces)} active interfaces.")
+    
+    log("Parsing OS routing table...")
     routes = get_routing_table()
     subnets = get_subnets(routes)
+    log(f"Mapping {len(subnets)} subnets for scanning.")
     
     # execute live scanning cores
+    log("Starting ICMP Ping Sweep across subnets...")
     scan_results = run_ps_script("ping_sweep.ps1", args=subnets)
     
     # attempt host enumeration (WMI/CIM) for all found IPs
     found_ips = []
     if isinstance(scan_results, list):
+        log(f"Ping sweep found {len(scan_results)} responsive endpoints.")
         # Resolve vendors for ping results
         for dev in scan_results:
             if 'mac' in dev:
@@ -95,9 +68,12 @@ def discover_all(community_override=None):
     host_details = []
     snmp_details = []
     if found_ips:
+        log(f"Running WMI/CIM enumeration on {len(found_ips)} hosts...")
         host_details = run_ps_script("host_enum.ps1", args=found_ips)
+        log("Attempting SNMP credential rotation on detected hardware...")
         snmp_details = scan_appliances(found_ips, communities=community_override)
     
+    log("Generating final audit report...")
     # generate the readiness report
     report = report_readiness(interfaces, routes, subnets)
     

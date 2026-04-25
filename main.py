@@ -3,6 +3,7 @@ from backend.processor import get_system_status
 from backend.database import ingest_live_data, get_devices_sorted_by_ip, get_device_counts_by_os
 from presentation.topology import TopologyManager
 from presentation.exporter import MarkdownGenerator
+from presentation.tui import DashboardApp
 
 def is_admin():
     try:
@@ -41,34 +42,26 @@ def q_print(msg=""):
 
 def show_dashboard():
     if QUIET: return 'discover'
-    from rich.console import Console
-    from rich.panel import Panel
-    from rich.text import Text
+    app = DashboardApp()
+    app.console.clear()
+    app.console.print(app.render())
     
-    console = Console()
-    console.clear()
+    choice = app.console.input("\n[bold cyan]Command > [/bold cyan]").lower()
     
-    menu_text = Text()
-    menu_text.append("[D]iscover ", style="bold green")
-    menu_text.append("| [M]ap only ", style="bold cyan")
-    menu_text.append("| [R]eport only ", style="bold yellow")
-    menu_text.append("| [L]ogs ", style="bold blue")
-    menu_text.append("| [S]chedule daily ", style="bold magenta")
-    menu_text.append("| [Q]uit", style="bold red")
-    
-    console.print(Panel(menu_text, title="[bold white]NetDocIT Dashboard[/bold white]", border_style="green"))
-    choice = console.input("\nSelect an action: ").upper()
-    
-    if choice == 'S':
-        time = console.input("Enter daily scan time (HH:mm) [08:00]: ")
+    if choice == 's':
+        time = app.console.input("Enter daily scan time (HH:mm) [08:00]: ")
         return f"schedule {time if time else '08:00'}"
         
     return choice
 
-def run_discovery(community=None):
+def run_discovery(app=None, community=None):
     from backend.database import add_log_entry
     add_log_entry("INFO", "Starting automated network discovery", "Scanner")
-    discovery = discover_all(community_override=community)
+    
+    if app:
+        app.state = "SCANNING"
+        
+    discovery = discover_all(community_override=community, log_fn=app.add_log if app else None)
     
     ingest_live_data(discovery)
     
@@ -91,6 +84,9 @@ def run_discovery(community=None):
     
     add_log_entry("INFO", f"Discovery finished. Found {len(devices)} devices.", "Scanner")
     
+    if app:
+        app.state = "MENU"
+        
     return discovery
 
 from backend.database import ingest_live_data, get_devices_sorted_by_ip, get_device_counts_by_os, get_all_subnets, get_all_interfaces, get_all_routes
@@ -128,6 +124,10 @@ __version__ = "0.1.0"
 def main():
     import sys
     import argparse
+    from backend.database import init_db
+    
+    init_db()
+
     global QUIET
     
     parser = argparse.ArgumentParser(
@@ -160,22 +160,51 @@ def main():
         choice = parts[0]
         sched_time = parts[1]
     
-    if choice in ['d', 'discover', 'scan', 'all']:
-        discovery = run_discovery(community=args.community)
-        run_mapping(discovery)
-        run_reporting()
-        q_print("\nScan and Reports successfully updated.")
+    if choice in ['d', 'discover', 'scan', 'all', '1']:
+        from rich.live import Live
+        app = DashboardApp()
+        try:
+            with Live(app.render(), console=app.console, screen=True) as live:
+                discovery = run_discovery(app=app, community=args.community)
+                live.update(app.render())
+                run_mapping(discovery)
+                run_reporting()
+            q_print("\nScan and Reports successfully updated.")
+        except KeyboardInterrupt:
+            q_print("\n[bold yellow]Scan cancelled by user.[/bold yellow]")
+            return
     
     elif choice in ['m', 'map']:
         run_mapping()
         q_print("\nMap updated: topology.html")
         
-    elif choice in ['r', 'report']:
+    elif choice in ['r', 'report', '2']:
+        # if interactive, show in TUI
+        if not cmd_list:
+            app = DashboardApp()
+            app.state = "INVENTORY"
+            app.devices = get_devices_sorted_by_ip()
+            app.console.clear()
+            app.console.print(app.render())
+            app.console.input("\n[bold cyan]Press Enter to return...[/bold cyan]")
+            return
+            
         run_reporting()
         q_print("\nReports successfully updated: REPORT.md / inventory.html")
     
-    elif choice in ['l', 'logs', 'L']:
+    elif choice in ['l', 'logs', 'L', '3']:
         from backend.database import get_logs, clear_logs
+        if not cmd_list:
+            app = DashboardApp()
+            app.state = "LOGS"
+            db_logs = get_logs(20)
+            for ts, lvl, msg, src in reversed(db_logs):
+                app.add_log(f"[{lvl}] {msg} ({src})")
+            app.console.clear()
+            app.console.print(app.render())
+            app.console.input("\n[bold cyan]Press Enter to return...[/bold cyan]")
+            return
+            
         from rich.console import Console
         from rich.table import Table
         
