@@ -67,7 +67,41 @@ def init_db():
                 description TEXT
             )
         ''')
+        # logs for auditing scans and errors
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                level TEXT,
+                message TEXT,
+                source TEXT
+            )
+        ''')
         
+        conn.commit()
+
+def add_log_entry(level, message, source="System"):
+    """Adds a persistent log entry to the database."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO logs (level, message, source)
+            VALUES (?, ?, ?)
+        ''', (level, message, source))
+        conn.commit()
+
+def get_logs(limit=50):
+    """Retrieves the latest logs from storage."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT timestamp, level, message, source FROM logs ORDER BY timestamp DESC LIMIT ?', (limit,))
+        return cursor.fetchall()
+
+def clear_logs():
+    """Wipes all log entries."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM logs')
         conn.commit()
 
 def save_interface(iface):

@@ -52,6 +52,7 @@ def show_dashboard():
     menu_text.append("[D]iscover ", style="bold green")
     menu_text.append("| [M]ap only ", style="bold cyan")
     menu_text.append("| [R]eport only ", style="bold yellow")
+    menu_text.append("| [L]ogs ", style="bold blue")
     menu_text.append("| [S]chedule daily ", style="bold magenta")
     menu_text.append("| [Q]uit", style="bold red")
     
@@ -65,6 +66,8 @@ def show_dashboard():
     return choice
 
 def run_discovery():
+    from backend.database import add_log_entry
+    add_log_entry("INFO", "Starting automated network discovery", "Scanner")
     discovery = discover_all()
     
     ingest_live_data(discovery)
@@ -85,6 +88,8 @@ def run_discovery():
     rep.add_device_table(devices)
     rep.save("REPORT.md")
     rep.save_html(len(discovery['subnets']), dev_stats, devices, "inventory.html")
+    
+    add_log_entry("INFO", f"Discovery finished. Found {len(devices)} devices.", "Scanner")
     
     return discovery
 
@@ -130,7 +135,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("command", nargs="*", 
-                        help="Action to perform (D)iscover, (M)ap, (R)eport, (S)chedule")
+                        help="Action to perform (D)iscover, (M)ap, (R)eport, (L)ogs, (S)chedule")
     parser.add_argument("-v", "--version", action="version", version=f"NetDocIT v{__version__}")
     parser.add_argument("-q", "--quiet", "--silent", action="store_true", dest="quiet", help="Background mode")
     parser.add_argument("-t", "--time", default="08:00", help="Time for daily schedule (HH:mm)")
@@ -168,6 +173,33 @@ def main():
         run_reporting()
         q_print("\nReports successfully updated: REPORT.md / inventory.html")
     
+    elif choice in ['l', 'logs', 'L']:
+        from backend.database import get_logs, clear_logs
+        from rich.console import Console
+        from rich.table import Table
+        
+        # if the user passed --clear, wipe them
+        if "clear" in sys.argv:
+            clear_logs()
+            q_print("\nLogs cleared.")
+            return
+
+        logs = get_logs(50)
+        if not logs:
+            q_print("\nNo logs found.")
+            return
+            
+        console = Console()
+        table = Table(title="System Logs (Last 50)")
+        table.add_column("Timestamp", style="dim")
+        table.add_column("Level")
+        table.add_column("Message")
+        table.add_column("Source")
+        
+        for ts, lvl, msg, src in logs:
+            table.add_row(ts, lvl, msg, src)
+        console.print(table)
+
     elif choice in ['s', 'schedule']:
         result = install_scheduler(sched_time)
         if result == True:
