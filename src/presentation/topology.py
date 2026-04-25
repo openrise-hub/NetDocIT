@@ -20,6 +20,7 @@ class TopologyManager:
         for iface in discovery_summary.get('interfaces', []):
             iface_id = f"iface:{iface['name']}"
             
+            # format ip
             str_ip = iface['ipv4'] if iface['ipv4'] else "No IP"
             self.graph.add_node(
                 iface_id, 
@@ -27,7 +28,7 @@ class TopologyManager:
                 label=f"{iface['name']}\n{str_ip}",
                 shape="dot",
                 color="#3498db",
-                size=20
+                size=21
             )
             self.graph.add_edge("Host", iface_id)
             
@@ -132,9 +133,9 @@ class TopologyManager:
         # configure physics to prevent overlap
         net.repulsion(
             node_distance=150,
-            central_gravity=0.2,
-            spring_length=200,
-            spring_strength=0.05,
+            central_gravity=0.33,
+            spring_length=210,
+            spring_strength=0.06,
             damping=0.09
         )
         
