@@ -1,8 +1,8 @@
-from src.backend.discovery import discover_all
-from src.backend.processor import get_system_status
-from src.backend.database import ingest_live_data, get_devices_sorted_by_ip, get_device_counts_by_os
-from src.presentation.topology import TopologyManager
-from src.presentation.exporter import MarkdownGenerator
+from backend.discovery import discover_all
+from backend.processor import get_system_status
+from backend.database import ingest_live_data, get_devices_sorted_by_ip, get_device_counts_by_os
+from presentation.topology import TopologyManager
+from presentation.exporter import MarkdownGenerator
 
 def install_scheduler(time_str="08:00"):
     import subprocess
@@ -78,7 +78,7 @@ def run_discovery():
     
     return discovery
 
-from src.backend.database import ingest_live_data, get_devices_sorted_by_ip, get_device_counts_by_os, get_all_subnets, get_all_interfaces, get_all_routes
+from backend.database import ingest_live_data, get_devices_sorted_by_ip, get_device_counts_by_os, get_all_subnets, get_all_interfaces, get_all_routes
 
 def run_mapping(discovery_data=None):
     if discovery_data is None:
