@@ -1,7 +1,5 @@
 from rich.layout import Layout
 from rich.panel import Panel
-from rich.header import Header
-from rich.footer import Footer
 from rich.console import Console
 from datetime import datetime
 

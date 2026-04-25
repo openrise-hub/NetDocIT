@@ -8,10 +8,9 @@ dependencies = [
     "jinja2>=3.1.6",
     "markdown2>=2.5.5",
     "networkx>=3.6.1",
-    "pysnmp-lextudio>=6.3.0",
+    "pysnmp>=7.1.15",
     "pyvis>=0.3.2",
-    "rich>=14.3.3",
-    "scapy>=2.7.0",
+    "rich>=14.3.3"
 ]
 
 [project.scripts]

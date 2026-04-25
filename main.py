@@ -124,6 +124,10 @@ __version__ = "0.1.0"
 def main():
     import sys
     import argparse
+    from backend.database import init_db
+    
+    init_db()
+
     global QUIET
     
     parser = argparse.ArgumentParser(
@@ -159,12 +163,16 @@ def main():
     if choice in ['d', 'discover', 'scan', 'all', '1']:
         from rich.live import Live
         app = DashboardApp()
-        with Live(app.render(), console=app.console, screen=True) as live:
-            discovery = run_discovery(app=app, community=args.community)
-            live.update(app.render())
-            run_mapping(discovery)
-            run_reporting()
-        q_print("\nScan and Reports successfully updated.")
+        try:
+            with Live(app.render(), console=app.console, screen=True) as live:
+                discovery = run_discovery(app=app, community=args.community)
+                live.update(app.render())
+                run_mapping(discovery)
+                run_reporting()
+            q_print("\nScan and Reports successfully updated.")
+        except KeyboardInterrupt:
+            q_print("\n[bold yellow]Scan cancelled by user.[/bold yellow]")
+            return
     
     elif choice in ['m', 'map']:
         run_mapping()
