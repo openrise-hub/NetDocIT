@@ -170,7 +170,17 @@ def main():
         run_mapping()
         q_print("\nMap updated: topology.html")
         
-    elif choice in ['r', 'report']:
+    elif choice in ['r', 'report', '2']:
+        # if interactive, show in TUI
+        if not cmd_list:
+            app = DashboardApp()
+            app.state = "INVENTORY"
+            app.devices = get_devices_sorted_by_ip()
+            app.console.clear()
+            app.console.print(app.render())
+            app.console.input("\n[bold cyan]Press Enter to return...[/bold cyan]")
+            return
+            
         run_reporting()
         q_print("\nReports successfully updated: REPORT.md / inventory.html")
     

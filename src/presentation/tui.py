@@ -10,7 +10,8 @@ class DashboardApp:
         self.layout = Layout()
         self.console = Console()
         self.state = "MENU"
-        self.log_buffer = [] # Store up to 100 for the current session
+        self.log_buffer = [] 
+        self.devices = [] # Store device list for the inventory view
         self._init_layout()
 
     def add_log(self, message):
@@ -59,6 +60,23 @@ class DashboardApp:
                 Group(progress, Panel(log_display, title="Recent Events", border_style="dim")),
                 title="[bold green]Scan Center[/bold green]", border_style="green"
             )
+        elif self.state == "INVENTORY":
+            from rich.table import Table
+            table = Table(box=None, expand=True)
+            table.add_column("IP Address", style="bold cyan")
+            table.add_column("MAC")
+            table.add_column("Vendor", style="dim")
+            table.add_column("System / OS", style="green")
+            
+            for dev in self.devices[:25]:
+                table.add_row(
+                    dev.get('ip', '?.?.?.?'),
+                    dev.get('mac', 'N/A'),
+                    dev.get('vendor', 'Unknown'),
+                    f"{dev.get('type', 'Device')} ({dev.get('os', 'Unknown')})"
+                )
+            return Panel(table, title=f"[bold cyan]Device Inventory ({len(self.devices)} found)[/bold cyan]", border_style="cyan")
+
         elif self.state == "LOGS":
             from rich.table import Table
             table = Table(box=None, expand=True)
@@ -79,6 +97,5 @@ class DashboardApp:
         return self.layout
 
 if __name__ == "__main__":
-    # simple test to see the skeleton
     app = DashboardApp()
     app.console.print(app.render())
