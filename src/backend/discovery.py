@@ -70,6 +70,7 @@ from .database import init_db, save_interface, clear_interfaces, get_last_scans,
 from .processor import process_discovered_subnets, get_missing_subnets, get_priority_subnets
 from .scanner import run_ps_script
 from .snmp_engine import scan_appliances
+from .vendor_lookup import resolve_vendor
 
 def discover_all():
     # unified entry point for environmental mapping
@@ -85,6 +86,10 @@ def discover_all():
     # attempt host enumeration (WMI/CIM) for all found IPs
     found_ips = []
     if isinstance(scan_results, list):
+        # Resolve vendors for ping results
+        for dev in scan_results:
+            if 'mac' in dev:
+                dev['vendor'] = resolve_vendor(dev['mac'])
         found_ips = [dev['ip'] for dev in scan_results if 'ip' in dev]
         
     host_details = []
@@ -92,6 +97,10 @@ def discover_all():
     if found_ips:
         host_details = run_ps_script("host_enum.ps1", args=found_ips)
         snmp_details = scan_appliances(found_ips)
+        # Resolve vendors for SNMP results
+        for dev in snmp_details:
+            if 'mac' in dev:
+                dev['vendor'] = resolve_vendor(dev['mac'])
     
     # generate the readiness report
     report = report_readiness(interfaces, routes, subnets)
