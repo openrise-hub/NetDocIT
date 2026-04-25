@@ -9,16 +9,15 @@ class DashboardApp:
     def __init__(self):
         self.layout = Layout()
         self.console = Console()
+        self.state = "MENU" # MENU, SCANNING, LOGS, INVENTORY
         self._init_layout()
 
     def _init_layout(self):
-        # build the visual skeleton
         self.layout.split_column(
             Layout(name="header", size=3),
             Layout(name="body"),
             Layout(name="footer", size=1)
         )
-        
         self.layout["body"].split_row(
             Layout(name="sidebar", size=25),
             Layout(name="main", ratio=1)
@@ -31,29 +30,31 @@ class DashboardApp:
         )
 
     def make_sidebar(self):
-        # navigation links
-        menu = "[bold green]1.[/bold green] Start Discovery\n"
-        menu += "[bold cyan]2.[/bold cyan] View Map\n"
-        menu += "[bold yellow]3.[/bold yellow] Reports\n"
-        menu += "[bold blue]4.[/bold blue] Audit Logs\n\n"
+        menu = f"{'[reverse]' if self.state == 'MENU' else ''}[bold green]1.[/bold green] Start Discovery\n"
+        menu += f"{'[reverse]' if self.state == 'INVENTORY' else ''}[bold cyan]2.[/bold cyan] Device List\n"
+        menu += f"{'[reverse]' if self.state == 'LOGS' else ''}[bold blue]3.[/bold blue] Audit Logs\n\n"
         menu += "[bold red]Q.[/bold red] Quit"
         return Panel(menu, title="[bold]Menu[/bold]", border_style="blue")
 
-    def make_main_placeholder(self):
-        # default view when no task is running
-        return Panel(
-            "\n\n[dim]Select an option from the sidebar to begin mapping your environment.[/dim]",
-            title="Dashboard",
-            border_style="dim"
-        )
+    def make_main_view(self):
+        if self.state == "MENU":
+            return Panel(
+                "\n\n[dim]Select an option to begin. Your environment will be mapped in real-time.[/dim]",
+                title="Dashboard", border_style="dim"
+            )
+        elif self.state == "SCANNING":
+            from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
+            progress = Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), BarColumn(), transient=True)
+            progress.add_task("Scanning Subnets...", total=100)
+            return Panel(progress, title="[bold green]Live Discovery[/bold green]", border_style="green")
+        
+        return Panel("View Not Implemented", title="Error")
 
     def render(self):
-        # update the content of each pane
         self.layout["header"].update(self.make_header())
         self.layout["sidebar"].update(self.make_sidebar())
-        self.layout["main"].update(self.make_main_placeholder())
+        self.layout["main"].update(self.make_main_view())
         self.layout["footer"].update("[dim] Space: Refresh | Q: Quit | Esc: Back [/dim]")
-        
         return self.layout
 
 if __name__ == "__main__":

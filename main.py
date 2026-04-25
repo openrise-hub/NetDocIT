@@ -54,9 +54,13 @@ def show_dashboard():
         
     return choice
 
-def run_discovery(community=None):
+def run_discovery(app=None, community=None):
     from backend.database import add_log_entry
     add_log_entry("INFO", "Starting automated network discovery", "Scanner")
+    
+    if app:
+        app.state = "SCANNING"
+        
     discovery = discover_all(community_override=community)
     
     ingest_live_data(discovery)
@@ -80,6 +84,9 @@ def run_discovery(community=None):
     
     add_log_entry("INFO", f"Discovery finished. Found {len(devices)} devices.", "Scanner")
     
+    if app:
+        app.state = "MENU"
+        
     return discovery
 
 from backend.database import ingest_live_data, get_devices_sorted_by_ip, get_device_counts_by_os, get_all_subnets, get_all_interfaces, get_all_routes
@@ -149,10 +156,14 @@ def main():
         choice = parts[0]
         sched_time = parts[1]
     
-    if choice in ['d', 'discover', 'scan', 'all']:
-        discovery = run_discovery(community=args.community)
-        run_mapping(discovery)
-        run_reporting()
+    if choice in ['d', 'discover', 'scan', 'all', '1']:
+        from rich.live import Live
+        app = DashboardApp()
+        with Live(app.render(), console=app.console, screen=True) as live:
+            discovery = run_discovery(app=app, community=args.community)
+            live.update(app.render())
+            run_mapping(discovery)
+            run_reporting()
         q_print("\nScan and Reports successfully updated.")
     
     elif choice in ['m', 'map']:
