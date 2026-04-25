@@ -31,8 +31,21 @@ class DashboardApp:
         )
 
     def make_header(self):
+        time_str = datetime.now().strftime("%H:%M:%S")
+        status = "[bold green]IDLE[/bold green]"
+        if self.state == "SCANNING":
+            status = "[bold blink yellow]SCANNING[/bold blink yellow]"
+        elif self.state == "INVENTORY":
+            status = "[bold cyan]INVENTORY[/bold cyan]"
+        elif self.state == "LOGS":
+            status = "[bold blue]AUDIT[/bold blue]"
+            
         return Panel(
-            f" [bold cyan]NetDocIT[/bold cyan] | [dim]Network Discovery & Inventory Engine[/dim] ",
+            Layout(
+                f" [bold cyan]NetDocIT[/bold cyan] | {status} "
+            ),
+            title=f"[dim]{time_str}[/dim]",
+            title_align="right",
             style="white on blue"
         )
 
