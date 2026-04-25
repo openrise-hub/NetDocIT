@@ -157,6 +157,9 @@ def ingest_live_data(summary):
         if ip in devices_map:
             devices_map[ip]["hostname"] = snmp.get("sysName", devices_map[ip]["hostname"])
             devices_map[ip]["os"] = snmp.get("sysDescr", devices_map[ip]["os"])
+            # if we found a vendor via SNMP (rare but possible), update it
+            if 'vendor' in snmp:
+                devices_map[ip]["vendor"] = snmp['vendor']
             
     # insert unified data into storage
     devices_tuples = [

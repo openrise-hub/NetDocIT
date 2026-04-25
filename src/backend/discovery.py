@@ -97,10 +97,6 @@ def discover_all():
     if found_ips:
         host_details = run_ps_script("host_enum.ps1", args=found_ips)
         snmp_details = scan_appliances(found_ips)
-        # Resolve vendors for SNMP results
-        for dev in snmp_details:
-            if 'mac' in dev:
-                dev['vendor'] = resolve_vendor(dev['mac'])
     
     # generate the readiness report
     report = report_readiness(interfaces, routes, subnets)
