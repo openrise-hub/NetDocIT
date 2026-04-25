@@ -50,3 +50,7 @@ presentation/output/
 # AI Agent Skills, everyone should be able to choose their own skills.
 skills-lock.json
 .agents/
+
+# Hardware Vendor Resolution
+tools/
+data/vendors.json

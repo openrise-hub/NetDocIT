@@ -1,38 +1,42 @@
-import re
-import json
+import sqlite3
 import os
 
-# global cache for manufacturer data
-OUI_MAP = {}
+_CONN = None
 
-def load_vendors():
-    global OUI_MAP
-    # locate vendors.json relative to this script
+def init_db():
+    global _CONN
+    if _CONN is not None:
+        return
+        
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    vendor_path = os.path.join(base_dir, 'data', 'vendors.json')
+    db_path = os.path.join(base_dir, 'data', 'vendors.sqlite')
     
-    try:
-        if os.path.exists(vendor_path):
-            with open(vendor_path, 'r', encoding='utf-8') as f:
-                OUI_MAP = json.load(f)
-    except Exception:
-        OUI_MAP = {}
-
-# initialize on import
-load_vendors()
-
+    if os.path.exists(db_path):
+        _CONN = sqlite3.connect(db_path, check_same_thread=False)
 
 def resolve_vendor(mac):
     """
-    Resolves a MAC address to a manufacturer name using OUI prefix matching.
+    Resolves a MAC address to a manufacturer name using the local SQLite database.
     """
     if not mac or mac == "Unknown":
         return "Generic"
         
-    clean_mac = mac.replace("-", ":").upper()
+    init_db()
+    if _CONN is None:
+        return "Network Device"
+
+    # Normalize MAC and extract OUI prefix (e.g., 000C29)
+    clean_mac = mac.replace("-", "").replace(":", "").upper()
+    prefix = clean_mac[:6]
     
-    # extract the first 3 octets (OUI)
-    prefix = ":".join(clean_mac.split(":")[:3])
-    
-    # return the mapped vendor or a generic placeholder
-    return OUI_MAP.get(prefix, "Network Device")
+    try:
+        cursor = _CONN.cursor()
+        cursor.execute("SELECT name FROM vendors WHERE prefix = ?", (prefix,))
+        result = cursor.fetchone()
+        if result:
+            return result[0]
+    except Exception:
+        pass
+            
+    return "Network Device"
+
