@@ -4,10 +4,20 @@ from backend.database import ingest_live_data, get_devices_sorted_by_ip, get_dev
 from presentation.topology import TopologyManager
 from presentation.exporter import MarkdownGenerator
 
+def is_admin():
+    try:
+        import ctypes
+        return ctypes.windll.shell32.IsUserAnAdmin() != 0
+    except AttributeError:
+        return False
+
 def install_scheduler(time_str="08:00"):
     import subprocess
     import os
     import sys
+    
+    if not is_admin():
+        return "E_ADMIN"
     
     cwd = os.getcwd()
     task_name = "NetDocIT-DailyDiscovery"
@@ -159,10 +169,13 @@ def main():
         q_print("\nReports successfully updated: REPORT.md / inventory.html")
     
     elif choice in ['s', 'schedule']:
-        if install_scheduler(sched_time):
+        result = install_scheduler(sched_time)
+        if result == True:
             q_print(f"\nSuccess: Daily {sched_time} scan registered in Windows Task Scheduler.")
+        elif result == "E_ADMIN":
+            q_print("\n[BOLD RED]ACCESS DENIED:[/BOLD RED] You must run this command from an Administrator terminal (Elevated) to register a background task.")
         else:
-            q_print("\nError: Failed to register task. Ensure you have the required permissions.")
+            q_print("\nError: Failed to register task. Check your permissions or system configuration.")
     
     elif choice == 'Q':
         q_print("Exiting.")
