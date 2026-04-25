@@ -72,7 +72,7 @@ from .scanner import run_ps_script
 from .snmp_engine import scan_appliances
 from .vendor_lookup import resolve_vendor
 
-def discover_all():
+def discover_all(community_override=None):
     # unified entry point for environmental mapping
     clear_interfaces()
     
@@ -96,7 +96,7 @@ def discover_all():
     snmp_details = []
     if found_ips:
         host_details = run_ps_script("host_enum.ps1", args=found_ips)
-        snmp_details = scan_appliances(found_ips)
+        snmp_details = scan_appliances(found_ips, communities=community_override)
     
     # generate the readiness report
     report = report_readiness(interfaces, routes, subnets)

@@ -65,10 +65,10 @@ def show_dashboard():
         
     return choice
 
-def run_discovery():
+def run_discovery(community=None):
     from backend.database import add_log_entry
     add_log_entry("INFO", "Starting automated network discovery", "Scanner")
-    discovery = discover_all()
+    discovery = discover_all(community_override=community)
     
     ingest_live_data(discovery)
     
@@ -139,6 +139,7 @@ def main():
     parser.add_argument("-v", "--version", action="version", version=f"NetDocIT v{__version__}")
     parser.add_argument("-q", "--quiet", "--silent", action="store_true", dest="quiet", help="Background mode")
     parser.add_argument("-t", "--time", default="08:00", help="Time for daily schedule (HH:mm)")
+    parser.add_argument("-c", "--community", help="SNMP community string override")
     
     args = parser.parse_args()
     QUIET = args.quiet
@@ -160,7 +161,7 @@ def main():
         sched_time = parts[1]
     
     if choice in ['d', 'discover', 'scan', 'all']:
-        discovery = run_discovery()
+        discovery = run_discovery(community=args.community)
         run_mapping(discovery)
         run_reporting()
         q_print("\nScan and Reports successfully updated.")
