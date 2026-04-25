@@ -114,14 +114,23 @@ def run_reporting():
     rep.save("REPORT.md")
     rep.save_html(len(subnets), dev_stats, devices, "inventory.html")
 
+__version__ = "0.1.0"
+
 def main():
     import sys
     import argparse
     global QUIET
     
-    parser = argparse.ArgumentParser(description="NetDocIT Terminal Dashboard")
-    parser.add_argument("command", nargs="?", choices=["discover", "report", "map", "all"], help="Subcommand to run")
-    parser.add_argument("-q", "--quiet", action="store_true", help="Suppress terminal output")
+    parser = argparse.ArgumentParser(
+        description="NetDocIT: Automated Network Inventory & Topology Discovery",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("command", nargs="?", 
+                        choices=["scan", "discover", "report", "map", "schedule", "all"], 
+                        help="Action to perform (default: launch dashboard)")
+    parser.add_argument("-v", "--version", action="version", version=f"NetDocIT v{__version__}")
+    parser.add_argument("-q", "--quiet", action="store_true", help="Background mode (no terminal UI)")
+    
     args = parser.parse_args()
     
     QUIET = args.quiet
@@ -129,11 +138,11 @@ def main():
     # if no command is passed, launch the interactive dashboard
     choice = args.command if args.command else show_dashboard()
     
-    if choice in ['D', 'discover', 'all']:
+    if choice in ['D', 'discover', 'scan', 'all']:
         discovery = run_discovery()
         run_mapping(discovery)
         run_reporting()
-        q_print("\nDiscovery and Reports updated.")
+        q_print("\nScan and Reports successfully updated.")
     
     elif choice in ['M', 'map']:
         run_mapping()
