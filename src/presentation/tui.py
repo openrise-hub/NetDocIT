@@ -63,14 +63,10 @@ class DashboardApp:
                 title="Dashboard", border_style="dim"
             )
         elif self.state == "SCANNING":
-            from rich.progress import Progress, SpinnerColumn, TextColumn
-            from rich.console import Group
-            progress = Progress(SpinnerColumn(), TextColumn("[bold green]{task.description}"))
-            progress.add_task("Active Discovery Pipeline Running...")
             log_display = "\n".join(self.log_buffer[-10:])
             return Panel(
-                Group(progress, Panel(log_display, title="Recent Events", border_style="dim")),
-                title="[bold green]Scan Center[/bold green]", border_style="green"
+                f"[bold yellow]Scanning Network...[/bold yellow]\n\n{log_display}",
+                title="Scan Center", border_style="yellow"
             )
         elif self.state == "INVENTORY":
             from rich.table import Table
@@ -103,20 +99,30 @@ class DashboardApp:
         
         return Panel("View Not Implemented", title="Error")
 
-    def render(self):
-        self.layout["header"].update(self.make_header())
-        self.layout["sidebar"].update(self.make_sidebar())
-        self.layout["main"].update(self.make_main_view())
+    def __rich__(self):
+        l = Layout()
+        l.split_column(
+            Layout(name="header", size=3),
+            Layout(name="body"),
+            Layout(name="footer", size=1)
+        )
+        l["body"].split_row(
+            Layout(name="sidebar", size=25),
+            Layout(name="main", ratio=1)
+        )
         
-        # contextual footer hints
-        hints = "[dim] 1-3: Select View | Q: Quit [/dim]"
+        l["header"].update(self.make_header())
+        l["sidebar"].update(self.make_sidebar())
+        l["main"].update(self.make_main_view())
+        
+        hints = "1-3: Select View | Q: Quit"
         if self.state == "INVENTORY":
-            hints = "[dim] [W/S] Scroll | Esc: Back | Q: Quit [/dim]"
+            hints = "[W/S] Scroll | Esc: Back | Q: Quit"
         elif self.state == "LOGS":
-            hints = "[dim] Esc: Back | Q: Quit [/dim]"
+            hints = "Esc: Back | Q: Quit"
             
-        self.layout["footer"].update(hints)
-        return self.layout
+        l["footer"].update(f"[dim] {hints} [/dim]")
+        return l
 
 if __name__ == "__main__":
     app = DashboardApp()

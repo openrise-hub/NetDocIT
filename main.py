@@ -166,47 +166,47 @@ def main():
         from presentation.tui import DashboardApp
         from rich.live import Live
         import threading
-        
         app = DashboardApp()
-        scan_thread = None
-
-        with Live(app.render(), console=app.console, screen=True, auto_refresh=False) as live:
-            while True:
-                live.update(app.render())
-                key = get_key()
-                
-                if key == 'q': break
-                elif key == '1': # trigger background automated scan
-                    if app.state != "SCANNING":
-                        app.state = "SCANNING"
-                        def run_bg_scan():
-                            discovery = run_discovery(app=app, community=args.community)
-                            run_mapping(discovery)
-                            run_reporting()
+        try:
+            with Live(app, console=app.console, screen=True, auto_refresh=True, refresh_per_second=10) as live:
+                while True:
+                    if msvcrt.kbhit():
+                        try:
+                            res = msvcrt.getch()
+                            key = res.decode('utf-8').lower()
+                        except UnicodeDecodeError:
+                            key = None
+                        
+                        if key == 'q': break
+                        elif key == '1' and app.state != "SCANNING":
+                            app.state = "SCANNING"
+                            def run():
+                                try:
+                                    d = run_discovery(app=app, community=args.community)
+                                    run_mapping(d)
+                                    run_reporting()
+                                except: pass
+                                app.state = "MENU"
+                            threading.Thread(target=run, daemon=True).start()
+                        elif key == '2':
+                            from backend.database import get_devices_sorted_by_ip
+                            app.state = "INVENTORY"
+                            app.devices = get_devices_sorted_by_ip()
+                            app.scroll_index = 0
+                        elif key == 'w' and app.state == "INVENTORY":
+                            app.scroll_index = max(0, app.scroll_index - 5)
+                        elif key == 's' and app.state == "INVENTORY":
+                            if app.scroll_index + 20 < len(app.devices):
+                                app.scroll_index += 5
+                        elif key == '3':
+                            from backend.database import get_logs
+                            app.state = "LOGS"
+                            logs = get_logs(20)
+                            app.log_buffer = [f"[{l}] {m}" for t,l,m,s in reversed(logs)]
+                        elif key == '\x1b':
                             app.state = "MENU"
-                        
-                        scan_thread = threading.Thread(target=run_bg_scan, daemon=True)
-                        scan_thread.start()
-                        
-                elif key == '2': # show device inventory table
-                    from backend.database import get_devices_sorted_by_ip
-                    app.state = "INVENTORY"
-                    app.devices = get_devices_sorted_by_ip()
-                    app.scroll_index = 0
-                elif key == 'w' and app.state == "INVENTORY": 
-                    app.scroll_index = max(0, app.scroll_index - 5)
-                elif key == 's' and app.state == "INVENTORY":
-                    if app.scroll_index + 20 < len(app.devices):
-                        app.scroll_index += 5
-                elif key == '3': # view session audit logs
-                    from backend.database import get_logs
-                    app.state = "LOGS"
-                    db_logs = get_logs(20)
-                    app.log_buffer = [f"[{l}] {m}" for t,l,m,s in reversed(db_logs)]
-                elif key == '\x1b': # escape key back to home
-                    app.state = "MENU"
-                
-                time.sleep(0.1) # stabilize tui refresh rate
+                    time.sleep(0.05)
+        except KeyboardInterrupt: pass
         return
 
     # handle direct cli command execution
