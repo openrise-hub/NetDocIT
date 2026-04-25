@@ -121,6 +121,16 @@ def run_reporting():
 
 __version__ = "0.1.0"
 
+import msvcrt
+import time
+
+def get_key():
+    # capture a single keypress for windows hotkeys
+    if msvcrt.kbhit():
+        try: return msvcrt.getch().decode('utf-8').lower()
+        except: return None
+    return None
+
 def main():
     import sys
     import argparse
@@ -150,8 +160,41 @@ def main():
         logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
     
     cmd_list = args.command
-    choice = cmd_list[0].lower() if cmd_list else show_dashboard()
     
+    # if no command list, enter reactive dashboard loop
+    if not cmd_list:
+        from presentation.tui import DashboardApp
+        from rich.live import Live
+        app = DashboardApp()
+
+        with Live(app.render(), console=app.console, screen=True, auto_refresh=False) as live:
+            while True:
+                live.update(app.render())
+                key = get_key()
+                
+                if key == 'q': break
+                elif key == '1': # trigger automated scan
+                    app.state = "SCANNING"
+                    live.update(app.render())
+                    discovery = run_discovery(app=app, community=args.community)
+                    run_mapping(discovery)
+                    run_reporting()
+                    app.state = "MENU"
+                elif key == '2': # show device inventory table
+                    app.state = "INVENTORY"
+                    app.devices = get_devices_sorted_by_ip()
+                elif key == '3': # view session audit logs
+                    app.state = "LOGS"
+                    db_logs = get_logs(20)
+                    app.log_buffer = [f"[{l}] {m}" for t,l,m,s in reversed(db_logs)]
+                elif key == '\x1b': # escape key back to home
+                    app.state = "MENU"
+                
+                time.sleep(0.1) # stabilize tui refresh rate
+        return
+
+    # handle direct cli command execution
+    choice = cmd_list[0].lower()
     sched_time = args.time
     if choice == 'schedule' and len(cmd_list) > 1:
         sched_time = cmd_list[1]
