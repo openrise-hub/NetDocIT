@@ -254,31 +254,11 @@ def main():
         q_print("\nMap updated: topology.html")
 
     elif choice in ['r', 'report', '2']:
-        if not cmd_list:
-            app = DashboardApp()
-            app.state = "INVENTORY"
-            app.devices = get_devices_sorted_by_ip()
-            app.console.clear()
-            app.console.print(app.render())
-            app.console.input("\n[bold cyan]Press Enter to return...[/bold cyan]")
-            return
-
         run_reporting()
         q_print("\nReports successfully updated: REPORT.md / inventory.html")
 
     elif choice in ['l', 'logs', 'L', '3']:
         from .backend.database import get_logs, clear_logs
-        if not cmd_list:
-            app = DashboardApp()
-            app.state = "LOGS"
-            db_logs = get_logs(20)
-            for ts, lvl, msg, src in reversed(db_logs):
-                app.add_log(f"[{lvl}] {msg} ({src})")
-            app.console.clear()
-            app.console.print(app.render())
-            app.console.input("\n[bold cyan]Press Enter to return...[/bold cyan]")
-            return
-
         from rich.console import Console
         from rich.table import Table
 
