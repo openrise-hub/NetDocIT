@@ -20,11 +20,11 @@ class MarkdownGenerator:
     def add_device_table(self, devices):
         # generate the active device inventory table
         self.add_header("Active Device Inventory", 2)
-        self.content.append("| IP Address | Hostname | OS / Type | MAC Address |")
-        self.content.append("|------------|----------|-----------|-------------|")
+        self.content.append("| IP Address | Hostname | Manufacturer | OS / Type | MAC Address |")
+        self.content.append("|------------|----------|--------------|-----------|-------------|")
         
         for ip, mac, host, os_val, vendor in devices:
-            self.content.append(f"| {ip} | {host} | {os_val} | {mac} |")
+            self.content.append(f"| {ip} | {host} | {vendor} | {os_val} | {mac} |")
         self.content.append("")
 
     def save(self, filename="REPORT.md"):

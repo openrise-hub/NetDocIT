@@ -1,4 +1,5 @@
 import networkx as nx
+import ipaddress
 
 class TopologyManager:
     def __init__(self):
@@ -37,9 +38,11 @@ class TopologyManager:
                     subnet_id = f"subnet:{route['network']}"
                     
                     tag = "Unlabeled"
+                    cidr = ""
                     for sn in discovery_summary.get('subnets', []):
-                        if sn['cidr'].startswith(route['network']):
+                        if sn['cidr'].split('/')[0] == route['network']:
                             tag = sn['tag']
+                            cidr = sn['cidr']
                             break
                     
                     self.graph.add_node(
@@ -48,9 +51,55 @@ class TopologyManager:
                         label=f"{tag}\n{route['network']}",
                         shape="database",
                         color="#2ecc71",
-                        size=25
+                        size=25,
+                        cidr=cidr
                     )
                     self.graph.add_edge(iface_id, subnet_id)
+
+        scan_data = discovery_summary.get('scan_data', [])
+        all_devices = {d['ip']: d for d in scan_data}
+        
+        for d in discovery_summary.get('host_data', []):
+            if d['ip'] in all_devices:
+                all_devices[d['ip']].update(d)
+        for d in discovery_summary.get('snmp_data', []):
+            if d['ip'] in all_devices:
+                all_devices[d['ip']].update(d)
+
+        for ip, dev in all_devices.items():
+            parent_subnet = None
+            try:
+                ip_obj = ipaddress.ip_address(ip)
+                for node, data in self.graph.nodes(data=True):
+                    if data.get('type') == 'subnet' and data.get('cidr'):
+                        net_obj = ipaddress.ip_network(data['cidr'])
+                        if ip_obj in net_obj:
+                            parent_subnet = node
+                            break
+            except Exception:
+                continue
+
+            if parent_subnet:
+                dev_id = f"dev:{ip}"
+                is_windows = "Windows" in dev.get('os', '')
+                shape = "box" if is_windows else "triangle"
+                color = "#9b59b6" if is_windows else "#f1c40f"
+                
+                label = dev.get('hostname', ip)
+                if label == "Active-Host": label = ip
+                
+                title = f"IP: {ip}<br>MAC: {dev.get('mac', 'Unknown')}<br>Vendor: {dev.get('vendor', 'Unknown')}<br>OS: {dev.get('os', 'Unknown')}"
+                
+                self.graph.add_node(
+                    dev_id,
+                    type="device",
+                    label=label,
+                    shape=shape,
+                    color=color,
+                    title=title,
+                    size=15
+                )
+                self.graph.add_edge(parent_subnet, dev_id)
 
     def get_stats(self):
         return f"Topology built: {self.graph.number_of_nodes()} nodes, {self.graph.number_of_edges()} edges."
