@@ -61,7 +61,7 @@ def run_discovery(app=None, community=None):
     if app:
         app.state = "SCANNING"
         
-    discovery = discover_all(community_override=community)
+    discovery = discover_all(community_override=community, log_fn=app.add_log if app else None)
     
     ingest_live_data(discovery)
     
@@ -174,8 +174,19 @@ def main():
         run_reporting()
         q_print("\nReports successfully updated: REPORT.md / inventory.html")
     
-    elif choice in ['l', 'logs', 'L']:
+    elif choice in ['l', 'logs', 'L', '3']:
         from backend.database import get_logs, clear_logs
+        if not cmd_list:
+            app = DashboardApp()
+            app.state = "LOGS"
+            db_logs = get_logs(20)
+            for ts, lvl, msg, src in reversed(db_logs):
+                app.add_log(f"[{lvl}] {msg} ({src})")
+            app.console.clear()
+            app.console.print(app.render())
+            app.console.input("\n[bold cyan]Press Enter to return...[/bold cyan]")
+            return
+            
         from rich.console import Console
         from rich.table import Table
         

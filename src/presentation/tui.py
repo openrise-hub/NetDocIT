@@ -9,8 +9,15 @@ class DashboardApp:
     def __init__(self):
         self.layout = Layout()
         self.console = Console()
-        self.state = "MENU" # MENU, SCANNING, LOGS, INVENTORY
+        self.state = "MENU"
+        self.log_buffer = [] # Store up to 100 for the current session
         self._init_layout()
+
+    def add_log(self, message):
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.log_buffer.append(f"[dim]{timestamp}[/dim] {message}")
+        if len(self.log_buffer) > 100:
+            self.log_buffer.pop(0)
 
     def _init_layout(self):
         self.layout.split_column(
@@ -43,10 +50,24 @@ class DashboardApp:
                 title="Dashboard", border_style="dim"
             )
         elif self.state == "SCANNING":
-            from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
-            progress = Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), BarColumn(), transient=True)
-            progress.add_task("Scanning Subnets...", total=100)
-            return Panel(progress, title="[bold green]Live Discovery[/bold green]", border_style="green")
+            from rich.progress import Progress, SpinnerColumn, TextColumn
+            from rich.console import Group
+            progress = Progress(SpinnerColumn(), TextColumn("[bold green]{task.description}"))
+            progress.add_task("Active Discovery Pipeline Running...")
+            log_display = "\n".join(self.log_buffer[-10:])
+            return Panel(
+                Group(progress, Panel(log_display, title="Recent Events", border_style="dim")),
+                title="[bold green]Scan Center[/bold green]", border_style="green"
+            )
+        elif self.state == "LOGS":
+            from rich.table import Table
+            table = Table(box=None, expand=True)
+            table.add_column("Timestamp", style="dim", width=12)
+            table.add_column("Message")
+            for entry in self.log_buffer[-20:]:
+                parts = entry.split(" ", 1)
+                table.add_row(parts[0], parts[1])
+            return Panel(table, title="[bold blue]Session Audit Logs[/bold blue]", border_style="blue")
         
         return Panel("View Not Implemented", title="Error")
 

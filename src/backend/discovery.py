@@ -72,20 +72,31 @@ from .scanner import run_ps_script
 from .snmp_engine import scan_appliances
 from .vendor_lookup import resolve_vendor
 
-def discover_all(community_override=None):
+def discover_all(community_override=None, log_fn=None):
+    def log(msg):
+        if log_fn: log_fn(msg)
+
     # unified entry point for environmental mapping
+    log("Initializing local interface database...")
     clear_interfaces()
     
+    log("Identifying active network adapters...")
     interfaces = get_active_interfaces()
+    log(f"Found {len(interfaces)} active interfaces.")
+    
+    log("Parsing OS routing table...")
     routes = get_routing_table()
     subnets = get_subnets(routes)
+    log(f"Mapping {len(subnets)} subnets for scanning.")
     
     # execute live scanning cores
+    log("Starting ICMP Ping Sweep across subnets...")
     scan_results = run_ps_script("ping_sweep.ps1", args=subnets)
     
     # attempt host enumeration (WMI/CIM) for all found IPs
     found_ips = []
     if isinstance(scan_results, list):
+        log(f"Ping sweep found {len(scan_results)} responsive endpoints.")
         # Resolve vendors for ping results
         for dev in scan_results:
             if 'mac' in dev:
@@ -95,9 +106,12 @@ def discover_all(community_override=None):
     host_details = []
     snmp_details = []
     if found_ips:
+        log(f"Running WMI/CIM enumeration on {len(found_ips)} hosts...")
         host_details = run_ps_script("host_enum.ps1", args=found_ips)
+        log("Attempting SNMP credential rotation on detected hardware...")
         snmp_details = scan_appliances(found_ips, communities=community_override)
     
+    log("Generating final audit report...")
     # generate the readiness report
     report = report_readiness(interfaces, routes, subnets)
     
