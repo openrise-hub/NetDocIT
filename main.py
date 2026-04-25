@@ -3,6 +3,7 @@ from backend.processor import get_system_status
 from backend.database import ingest_live_data, get_devices_sorted_by_ip, get_device_counts_by_os
 from presentation.topology import TopologyManager
 from presentation.exporter import MarkdownGenerator
+from presentation.tui import DashboardApp
 
 def is_admin():
     try:
@@ -41,26 +42,14 @@ def q_print(msg=""):
 
 def show_dashboard():
     if QUIET: return 'discover'
-    from rich.console import Console
-    from rich.panel import Panel
-    from rich.text import Text
+    app = DashboardApp()
+    app.console.clear()
+    app.console.print(app.render())
     
-    console = Console()
-    console.clear()
+    choice = app.console.input("\n[bold cyan]Command > [/bold cyan]").lower()
     
-    menu_text = Text()
-    menu_text.append("[D]iscover ", style="bold green")
-    menu_text.append("| [M]ap only ", style="bold cyan")
-    menu_text.append("| [R]eport only ", style="bold yellow")
-    menu_text.append("| [L]ogs ", style="bold blue")
-    menu_text.append("| [S]chedule daily ", style="bold magenta")
-    menu_text.append("| [Q]uit", style="bold red")
-    
-    console.print(Panel(menu_text, title="[bold white]NetDocIT Dashboard[/bold white]", border_style="green"))
-    choice = console.input("\nSelect an action: ").upper()
-    
-    if choice == 'S':
-        time = console.input("Enter daily scan time (HH:mm) [08:00]: ")
+    if choice == 's':
+        time = app.console.input("Enter daily scan time (HH:mm) [08:00]: ")
         return f"schedule {time if time else '08:00'}"
         
     return choice
