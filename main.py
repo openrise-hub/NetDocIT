@@ -122,11 +122,16 @@ def main():
     parser.add_argument("command", nargs="*", 
                         help="Action to perform (D)iscover, (M)ap, (R)eport, (S)chedule")
     parser.add_argument("-v", "--version", action="version", version=f"NetDocIT v{__version__}")
-    parser.add_argument("-q", "--quiet", action="store_true", help="Background mode (no terminal UI)")
+    parser.add_argument("-q", "--quiet", "--silent", action="store_true", dest="quiet", help="Background mode")
     parser.add_argument("-t", "--time", default="08:00", help="Time for daily schedule (HH:mm)")
     
     args = parser.parse_args()
     QUIET = args.quiet
+    
+    # suppress third-party noise if quiet
+    if QUIET:
+        import logging
+        logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
     
     cmd_list = args.command
     choice = cmd_list[0].lower() if cmd_list else show_dashboard()
