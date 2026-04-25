@@ -192,6 +192,12 @@ def main():
                     from backend.database import get_devices_sorted_by_ip
                     app.state = "INVENTORY"
                     app.devices = get_devices_sorted_by_ip()
+                    app.scroll_index = 0
+                elif key == 'w' and app.state == "INVENTORY": 
+                    app.scroll_index = max(0, app.scroll_index - 5)
+                elif key == 's' and app.state == "INVENTORY":
+                    if app.scroll_index + 20 < len(app.devices):
+                        app.scroll_index += 5
                 elif key == '3': # view session audit logs
                     from backend.database import get_logs
                     app.state = "LOGS"

@@ -9,7 +9,8 @@ class DashboardApp:
         self.console = Console()
         self.state = "MENU"
         self.log_buffer = [] 
-        self.devices = [] # Store device list for the inventory view
+        self.devices = [] # current session hosts
+        self.scroll_index = 0 # position for table windowing
         self._init_layout()
 
     def add_log(self, message):
@@ -66,14 +67,16 @@ class DashboardApp:
             table.add_column("Vendor", style="dim")
             table.add_column("System / OS", style="green")
             
-            for dev in self.devices[:25]:
+            # windowed slice of the device list
+            visible_devices = self.devices[self.scroll_index : self.scroll_index + 20]
+            for dev in visible_devices:
                 table.add_row(
                     dev.get('ip', '?.?.?.?'),
                     dev.get('mac', 'N/A'),
                     dev.get('vendor', 'Unknown'),
                     f"{dev.get('type', 'Device')} ({dev.get('os', 'Unknown')})"
                 )
-            return Panel(table, title=f"[bold cyan]Device Inventory ({len(self.devices)} found)[/bold cyan]", border_style="cyan")
+            return Panel(table, title=f"[bold cyan]Inventory ({self.scroll_index}-{self.scroll_index + len(visible_devices)} of {len(self.devices)})[/bold cyan]", border_style="cyan")
 
         elif self.state == "LOGS":
             from rich.table import Table
@@ -91,7 +94,15 @@ class DashboardApp:
         self.layout["header"].update(self.make_header())
         self.layout["sidebar"].update(self.make_sidebar())
         self.layout["main"].update(self.make_main_view())
-        self.layout["footer"].update("[dim] Space: Refresh | Q: Quit | Esc: Back [/dim]")
+        
+        # contextual footer hints
+        hints = "[dim] 1-3: Select View | Q: Quit [/dim]"
+        if self.state == "INVENTORY":
+            hints = "[dim] [W/S] Scroll | Esc: Back | Q: Quit [/dim]"
+        elif self.state == "LOGS":
+            hints = "[dim] Esc: Back | Q: Quit [/dim]"
+            
+        self.layout["footer"].update(hints)
         return self.layout
 
 if __name__ == "__main__":
