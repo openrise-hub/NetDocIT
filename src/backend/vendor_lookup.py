@@ -3,16 +3,16 @@ import os
 
 _CONN = None
 
-def init_db():
-    global _CONN
-    if _CONN is not None:
-        return
-        
+
+def _get_vendor_db_path():
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    db_path = os.path.join(base_dir, 'data', 'vendors.sqlite')
-    
+    return os.path.join(base_dir, 'data', 'vendors.sqlite')
+
+def init_db():
+    db_path = _get_vendor_db_path()
     if os.path.exists(db_path):
-        _CONN = sqlite3.connect(db_path, check_same_thread=False)
+        with sqlite3.connect(db_path):
+            return
 
 def resolve_vendor(mac):
     """
@@ -20,9 +20,9 @@ def resolve_vendor(mac):
     """
     if not mac or mac == "Unknown":
         return "Generic"
-        
-    init_db()
-    if _CONN is None:
+
+    db_path = _get_vendor_db_path()
+    if not os.path.exists(db_path):
         return "Network Device"
 
     # Normalize MAC and extract OUI prefix (e.g., 000C29)
@@ -30,11 +30,12 @@ def resolve_vendor(mac):
     prefix = clean_mac[:6]
     
     try:
-        cursor = _CONN.cursor()
-        cursor.execute("SELECT name FROM vendors WHERE prefix = ?", (prefix,))
-        result = cursor.fetchone()
-        if result:
-            return result[0]
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM vendors WHERE prefix = ?", (prefix,))
+            result = cursor.fetchone()
+            if result:
+                return result[0]
     except Exception:
         pass
             
