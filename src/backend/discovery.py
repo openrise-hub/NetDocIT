@@ -54,7 +54,9 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
     if normalized_profile not in SUPPORTED_SCAN_PROFILES:
         normalized_profile = "balanced"
 
+    timeout_source = "override"
     if script_timeout_seconds is None:
+        timeout_source = "profile"
         script_timeout_seconds = get_scan_profile(normalized_profile)["script_timeout"]
 
     if not isinstance(script_timeout_seconds, (int, float)) or script_timeout_seconds <= 0:
@@ -140,6 +142,7 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
         "snmp_data": snmp_details,
         "scan_profile": normalized_profile,
         "script_timeout_seconds": script_timeout_seconds,
+        "script_timeout_source": timeout_source,
         "run_started_monotonic": run_started_monotonic,
         "run_finished_monotonic": run_finished_monotonic,
         "run_duration_seconds": run_duration_seconds,
