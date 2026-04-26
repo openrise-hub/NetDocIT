@@ -46,6 +46,9 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=60
     def log(msg):
         if log_fn: log_fn(msg)
 
+    if not isinstance(script_timeout_seconds, (int, float)) or script_timeout_seconds <= 0:
+        script_timeout_seconds = 60
+
     # unified entry point for environmental mapping
     log("Initializing local interface database...")
     clear_interfaces()
