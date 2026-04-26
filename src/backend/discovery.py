@@ -112,6 +112,7 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
             "local_addr": route.get("local_addr"),
         })
     subnets = get_subnets(routes)
+    scan_subnet_count = len(subnets)
     log(f"mapping {len(subnets)} subnets: {', '.join(subnets)}")
     
     # execute live scanning cores
@@ -124,8 +125,10 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
     
     # attempt host enumeration (wmi/cim) for all found ips
     found_ips = []
+    responsive_endpoint_count = 0
     if isinstance(scan_results, list):
         scan_devices = _as_dict_list(scan_results)
+        responsive_endpoint_count = len(scan_devices)
         log(f"ping sweep found {len(scan_devices)} responsive endpoints.")
         # Resolve vendors for ping results
         for dev in scan_devices:
@@ -156,6 +159,8 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
         "priorities": report["priorities"],
         "gateways": report["gateways"],
         "scan_data": _as_dict_list(scan_results),
+        "scan_subnet_count": scan_subnet_count,
+        "responsive_endpoint_count": responsive_endpoint_count,
         "host_data": host_details if isinstance(host_details, list) else [],
         "snmp_data": snmp_details,
         "scan_profile": normalized_profile,
