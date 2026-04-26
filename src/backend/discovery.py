@@ -60,8 +60,12 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
         script_timeout_seconds = get_scan_profile(normalized_profile)["script_timeout"]
 
     if not isinstance(script_timeout_seconds, (int, float)) or script_timeout_seconds <= 0:
+        if timeout_source == "override":
+            timeout_source = "fallback"
         script_timeout_seconds = 60
     if script_timeout_seconds > 300:
+        if timeout_source == "override":
+            timeout_source = "fallback"
         script_timeout_seconds = 300
 
     # unified entry point for environmental mapping
