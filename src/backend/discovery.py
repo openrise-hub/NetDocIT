@@ -118,8 +118,12 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
     # execute live scanning cores
     log("starting icmp ping sweep across subnets...")
     scan_results = run_ps_script("ping_sweep.ps1", args=subnets, timeout_seconds=script_timeout_seconds)
+    scan_error = False
+    scan_error_message = None
     
     if isinstance(scan_results, dict) and "error" in scan_results:
+        scan_error = True
+        scan_error_message = str(scan_results.get("error"))
         log(f"scanner error: {scan_results['error']}")
         scan_results = []
     
@@ -163,6 +167,8 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
         "priorities": report["priorities"],
         "gateways": report["gateways"],
         "scan_data": _as_dict_list(scan_results),
+        "scan_error": scan_error,
+        "scan_error_message": scan_error_message,
         "scan_subnet_count": scan_subnet_count,
         "responsive_endpoint_count": responsive_endpoint_count,
         "host_enum_target_count": host_enum_target_count,
