@@ -101,7 +101,7 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=60
     snmp_details = []
     if found_ips:
         log(f"Running WMI/CIM enumeration on {len(found_ips)} hosts...")
-        host_details = run_ps_script("host_enum.ps1", args=found_ips)
+        host_details = run_ps_script("host_enum.ps1", args=found_ips, timeout_seconds=script_timeout_seconds)
         log("Attempting SNMP credential rotation on detected hardware...")
         snmp_details = scan_appliances(found_ips, communities=community_override)
     
