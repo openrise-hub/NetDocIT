@@ -1,14 +1,22 @@
 import ipaddress
+from typing import Any
 from .scanner import run_ps_script
+
+def _as_dict_list(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
 
 def get_active_interfaces():
     res = run_ps_script("env_discovery.ps1")
-    if isinstance(res, dict): return res.get("interfaces", [])
+    if isinstance(res, dict):
+        return _as_dict_list(res.get("interfaces", []))
     return []
 
 def get_routing_table():
     res = run_ps_script("env_discovery.ps1")
-    if isinstance(res, dict): return res.get("routes", [])
+    if isinstance(res, dict):
+        return _as_dict_list(res.get("routes", []))
     return []
 
 def get_subnets(routes):
@@ -28,7 +36,7 @@ def get_subnets(routes):
     return sorted(list(subnets))
 
 from .config_parser import load_config
-from .database import init_db, save_interface, clear_interfaces, save_route, clear_routes, get_last_scans, get_all_subnets
+from .database import init_db, save_interface, clear_interfaces, save_route, clear_routes, get_last_scans, get_all_subnets, add_log_entry
 from .processor import process_discovered_subnets, get_missing_subnets, get_priority_subnets
 from .scanner import run_ps_script
 from .snmp_engine import scan_appliances
@@ -81,12 +89,13 @@ def discover_all(community_override=None, log_fn=None):
     # attempt host enumeration (wmi/cim) for all found ips
     found_ips = []
     if isinstance(scan_results, list):
-        log(f"ping sweep found {len(scan_results)} responsive endpoints.")
+        scan_devices = _as_dict_list(scan_results)
+        log(f"ping sweep found {len(scan_devices)} responsive endpoints.")
         # Resolve vendors for ping results
-        for dev in scan_results:
+        for dev in scan_devices:
             if 'mac' in dev:
                 dev['vendor'] = resolve_vendor(dev['mac'])
-        found_ips = [dev['ip'] for dev in scan_results if 'ip' in dev]
+        found_ips = [str(dev['ip']) for dev in scan_devices if 'ip' in dev]
         
     host_details = []
     snmp_details = []
@@ -108,7 +117,7 @@ def discover_all(community_override=None, log_fn=None):
         "missing": report["missing"],
         "priorities": report["priorities"],
         "gateways": report["gateways"],
-        "scan_data": scan_results if isinstance(scan_results, list) else [],
+        "scan_data": _as_dict_list(scan_results),
         "host_data": host_details if isinstance(host_details, list) else [],
         "snmp_data": snmp_details
     }

@@ -1,6 +1,7 @@
-import pysnmp.hlapi as hlapi
+import pysnmp.hlapi as hlapi  # pyright: ignore[reportMissingImports]
 import json
 import os
+from typing import Any, cast
 
 def load_config():
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -20,15 +21,16 @@ def query_snmp(ip, community='public'):
     }
     
     results = {'ip': ip, 'community': community}
+    hl = cast(Any, hlapi)
     
     for key, oid in oids.items():
         try:
             errorIndication, errorStatus, errorIndex, varBinds = next(
-                hlapi.getCmd(hlapi.SnmpEngine(),
-                       hlapi.CommunityData(community),
-                       hlapi.UdpTransportTarget((ip, 161), timeout=0.5, retries=0),
-                       hlapi.ContextData(),
-                       hlapi.ObjectType(hlapi.ObjectIdentity(oid)))
+                  hl.getCmd(hl.SnmpEngine(),
+                      hl.CommunityData(community),
+                      hl.UdpTransportTarget((ip, 161), timeout=0.5, retries=0),
+                      hl.ContextData(),
+                      hl.ObjectType(hl.ObjectIdentity(oid)))
             )
             
             if not errorIndication and not errorStatus:

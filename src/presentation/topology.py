@@ -125,7 +125,7 @@ class TopologyManager:
         rprint(tree)
 
     def save_html_map(self, output_path="index.html"):
-        from pyvis.network import Network
+        from pyvis.network import Network  # pyright: ignore[reportMissingImports]
         
         # translate networkx graph to interactive html
         net = Network(notebook=False, directed=False, heading="NetDocIT Topology", height="800px", width="100%")
