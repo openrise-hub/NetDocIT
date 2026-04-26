@@ -4,6 +4,9 @@ import os
 
 def run_ps_script(script_name, args=None, timeout_seconds=60):
     # execute a script from the scripts folder and return json
+    if not isinstance(timeout_seconds, (int, float)) or timeout_seconds <= 0:
+        timeout_seconds = 60
+
     script_path = os.path.join(os.path.dirname(__file__), 'scripts', script_name)
     
     if not os.path.exists(script_path):
