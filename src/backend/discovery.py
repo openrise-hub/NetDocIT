@@ -48,6 +48,8 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=60
 
     if not isinstance(script_timeout_seconds, (int, float)) or script_timeout_seconds <= 0:
         script_timeout_seconds = 60
+    if script_timeout_seconds > 300:
+        script_timeout_seconds = 300
 
     # unified entry point for environmental mapping
     log("Initializing local interface database...")
