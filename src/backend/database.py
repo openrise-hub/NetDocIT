@@ -83,12 +83,13 @@ def init_db():
 
 def add_log_entry(level, message, source="System"):
     """Adds a persistent log entry to the database."""
+    normalized_level = str(level).upper()
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
             INSERT INTO logs (level, message, source)
             VALUES (?, ?, ?)
-        ''', (level, message, source))
+        ''', (normalized_level, message, source))
         conn.commit()
 
 def get_logs(limit=50):
