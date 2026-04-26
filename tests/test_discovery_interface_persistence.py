@@ -15,6 +15,8 @@ class TestDiscoveryInterfacePersistence(unittest.TestCase):
 
             with patch.object(discovery, "clear_interfaces") as mock_clear_interfaces, \
                  patch.object(discovery, "save_interface") as mock_save_interface, \
+                  patch.object(discovery, "clear_routes") as mock_clear_routes, \
+                  patch.object(discovery, "save_route") as mock_save_route, \
                  patch.object(discovery, "get_active_interfaces") as mock_get_active_interfaces, \
                  patch.object(discovery, "get_routing_table") as mock_get_routing_table, \
                  patch.object(discovery, "run_ps_script") as mock_run_ps_script, \

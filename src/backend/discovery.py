@@ -28,7 +28,7 @@ def get_subnets(routes):
     return sorted(list(subnets))
 
 from .config_parser import load_config
-from .database import init_db, save_interface, clear_interfaces, get_last_scans, get_all_subnets
+from .database import init_db, save_interface, clear_interfaces, save_route, clear_routes, get_last_scans, get_all_subnets
 from .processor import process_discovered_subnets, get_missing_subnets, get_priority_subnets
 from .scanner import run_ps_script
 from .snmp_engine import scan_appliances
@@ -56,7 +56,17 @@ def discover_all(community_override=None, log_fn=None):
         log(f"found {len(interfaces)} adapters: {', '.join([i.get('name','') for i in interfaces])}")
     
     log("parsing os routing table...")
+    clear_routes()
     routes = get_routing_table()
+    for route in routes:
+        save_route({
+            "network": route.get("network"),
+            "netmask": route.get("netmask"),
+            "prefix_len": route.get("prefix_len"),
+            "gateway": route.get("gateway"),
+            "interface": route.get("interface"),
+            "local_addr": route.get("local_addr"),
+        })
     subnets = get_subnets(routes)
     log(f"mapping {len(subnets)} subnets: {', '.join(subnets)}")
     
