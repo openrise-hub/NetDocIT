@@ -1,12 +1,18 @@
 import sqlite3
 import os
 import ipaddress
+from contextlib import contextmanager
 
 DB_PATH = "data/netdocit.sqlite"
 
+@contextmanager
 def get_db_connection():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    return sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 def init_db():
     with get_db_connection() as conn:
