@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import ipaddress
 
 DB_PATH = "data/netdocit.sqlite"
 
@@ -216,8 +217,17 @@ def get_devices_sorted_by_ip():
     # fetch all devices sorted numerically by IP
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT ip, mac, hostname, os, vendor FROM devices ORDER BY ip ASC')
-        return cursor.fetchall()
+        cursor.execute('SELECT ip, mac, hostname, os, vendor FROM devices')
+        rows = cursor.fetchall()
+
+    def sort_key(row):
+        ip = row[0]
+        try:
+            return (0, ipaddress.ip_address(ip))
+        except ValueError:
+            return (1, ip)
+
+    return sorted(rows, key=sort_key)
 
 def get_device_counts_by_os():
     # count windows hosts vs network appliances
