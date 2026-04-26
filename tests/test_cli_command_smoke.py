@@ -39,10 +39,10 @@ class TestCliCommandSmoke(unittest.TestCase):
     def test_scan_command_runs_discovery_mapping_and_reporting(self, _mock_init_db):
         app_main = self._load_main_module()
 
-        with patch("src.main.run_reporting") as mock_run_reporting, \
-             patch("src.main.run_mapping") as mock_run_mapping, \
-             patch("src.main.run_discovery") as mock_run_discovery, \
-             patch("src.main.DashboardApp") as mock_dashboard, \
+        with patch.object(app_main, "run_reporting") as mock_run_reporting, \
+             patch.object(app_main, "run_mapping") as mock_run_mapping, \
+             patch.object(app_main, "run_discovery") as mock_run_discovery, \
+             patch.object(app_main, "DashboardApp") as mock_dashboard, \
              patch("rich.live.Live") as mock_live:
 
             fake_app = MagicMock()
@@ -67,7 +67,7 @@ class TestCliCommandSmoke(unittest.TestCase):
     @patch("src.backend.database.init_db")
     def test_map_command_invokes_mapping(self, _mock_init_db):
         app_main = self._load_main_module()
-        with patch("src.main.run_mapping") as mock_run_mapping:
+        with patch.object(app_main, "run_mapping") as mock_run_mapping:
             with patch("sys.argv", ["netdocit", "map"]):
                 app_main.main()
 
@@ -76,7 +76,7 @@ class TestCliCommandSmoke(unittest.TestCase):
     @patch("src.backend.database.init_db")
     def test_report_command_invokes_reporting(self, _mock_init_db):
         app_main = self._load_main_module()
-        with patch("src.main.run_reporting") as mock_run_reporting:
+        with patch.object(app_main, "run_reporting") as mock_run_reporting:
             with patch("sys.argv", ["netdocit", "report"]):
                 app_main.main()
 
