@@ -26,3 +26,25 @@ jobs:
 
       - name: Run unit tests
         run: python -m unittest discover -v
+
+  typecheck:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install project and pyright
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install pyright
+
+      - name: Run typecheck
+        run: python -m pyright
