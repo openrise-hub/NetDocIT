@@ -7,14 +7,14 @@ def _as_dict_list(value: Any) -> list[dict[str, Any]]:
         return []
     return [item for item in value if isinstance(item, dict)]
 
-def get_active_interfaces():
-    res = run_ps_script("env_discovery.ps1")
+def get_active_interfaces(timeout_seconds=60):
+    res = run_ps_script("env_discovery.ps1", timeout_seconds=timeout_seconds)
     if isinstance(res, dict):
         return _as_dict_list(res.get("interfaces", []))
     return []
 
-def get_routing_table():
-    res = run_ps_script("env_discovery.ps1")
+def get_routing_table(timeout_seconds=60):
+    res = run_ps_script("env_discovery.ps1", timeout_seconds=timeout_seconds)
     if isinstance(res, dict):
         return _as_dict_list(res.get("routes", []))
     return []
