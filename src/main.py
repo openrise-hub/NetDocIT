@@ -9,7 +9,10 @@ from .presentation.tui import DashboardApp
 def is_admin():
     try:
         import ctypes
-        return ctypes.windll.shell32.IsUserAnAdmin() != 0
+        windll = getattr(ctypes, "windll", None)
+        if windll is None:
+            return False
+        return windll.shell32.IsUserAnAdmin() != 0
     except AttributeError:
         return False
 
@@ -149,9 +152,14 @@ except ModuleNotFoundError:
 
 
 def get_key():
-    if msvcrt.kbhit():
+    kbhit = getattr(msvcrt, "kbhit", None)
+    getch = getattr(msvcrt, "getch", None)
+    if callable(kbhit) and callable(getch) and kbhit():
         try:
-            return msvcrt.getch().decode('utf-8').lower()
+            raw = getch()
+            if isinstance(raw, (bytes, bytearray)):
+                return raw.decode('utf-8').lower()
+            return None
         except Exception:
             return None
     return None
@@ -193,10 +201,15 @@ def main():
         try:
             with Live(app, console=app.console, screen=True, auto_refresh=True, refresh_per_second=10):
                 while True:
-                    if msvcrt.kbhit():
+                    kbhit = getattr(msvcrt, "kbhit", None)
+                    getch = getattr(msvcrt, "getch", None)
+                    if callable(kbhit) and callable(getch) and kbhit():
                         try:
-                            res = msvcrt.getch()
-                            key = res.decode('utf-8').lower()
+                            res = getch()
+                            if isinstance(res, (bytes, bytearray)):
+                                key = res.decode('utf-8').lower()
+                            else:
+                                key = None
                         except UnicodeDecodeError:
                             key = None
 
