@@ -131,8 +131,21 @@ def run_reporting():
 
 __version__ = "0.1.0"
 
-import msvcrt
 import time
+
+try:
+    import msvcrt
+except ModuleNotFoundError:
+    class _MsvcrtShim:
+        @staticmethod
+        def kbhit():
+            return False
+
+        @staticmethod
+        def getch():
+            return b""
+
+    msvcrt = _MsvcrtShim()
 
 
 def get_key():
