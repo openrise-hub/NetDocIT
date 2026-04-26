@@ -1,6 +1,6 @@
 import ipaddress
 from typing import Any
-from .scanner import run_ps_script
+from .scanner import run_ps_script, get_scan_profile
 
 def _as_dict_list(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
@@ -38,13 +38,15 @@ def get_subnets(routes):
 from .config_parser import load_config
 from .database import init_db, save_interface, clear_interfaces, save_route, clear_routes, get_last_scans, get_all_subnets, add_log_entry
 from .processor import process_discovered_subnets, get_missing_subnets, get_priority_subnets
-from .scanner import run_ps_script
 from .snmp_engine import scan_appliances
 from .vendor_lookup import resolve_vendor
 
-def discover_all(community_override=None, log_fn=None, script_timeout_seconds=60):
+def discover_all(community_override=None, log_fn=None, script_timeout_seconds=None, scan_profile="balanced"):
     def log(msg):
         if log_fn: log_fn(msg)
+
+    if script_timeout_seconds is None:
+        script_timeout_seconds = get_scan_profile(scan_profile)["script_timeout"]
 
     if not isinstance(script_timeout_seconds, (int, float)) or script_timeout_seconds <= 0:
         script_timeout_seconds = 60

@@ -63,14 +63,14 @@ def show_dashboard():
     return choice
 
 
-def run_discovery(app=None, community=None):
+def run_discovery(app=None, community=None, scan_profile="balanced"):
     from .backend.database import add_log_entry
     add_log_entry("INFO", "Starting automated network discovery", "Scanner")
 
     if app:
         app.state = "SCANNING"
 
-    discovery = discover_all(community_override=community, log_fn=app.add_log if app else None)
+    discovery = discover_all(community_override=community, log_fn=app.add_log if app else None, scan_profile=scan_profile)
 
     ingest_live_data(discovery)
 
@@ -184,6 +184,7 @@ def main():
     parser.add_argument("-q", "--quiet", "--silent", action="store_true", dest="quiet", help="Background mode")
     parser.add_argument("-t", "--time", default="08:00", help="Time for daily schedule (HH:mm)")
     parser.add_argument("-c", "--community", help="SNMP community string override")
+    parser.add_argument("-p", "--profile", choices=["safe", "balanced", "aggressive"], default="balanced", help="Scan profile")
 
     args = parser.parse_args()
     QUIET = args.quiet
@@ -220,7 +221,7 @@ def main():
 
                             def run():
                                 try:
-                                    d = run_discovery(app=app, community=args.community)
+                                    d = run_discovery(app=app, community=args.community, scan_profile=args.profile)
                                     run_mapping(d)
                                     run_reporting()
                                 except Exception as exc:
@@ -266,7 +267,7 @@ def main():
         app = DashboardApp()
         try:
             with Live(app.render(), console=app.console, screen=True) as live:
-                discovery = run_discovery(app=app, community=args.community)
+                discovery = run_discovery(app=app, community=args.community, scan_profile=args.profile)
                 live.update(app.render())
                 run_mapping(discovery)
                 run_reporting()
