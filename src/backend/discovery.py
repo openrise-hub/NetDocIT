@@ -1,4 +1,5 @@
 import ipaddress
+import time
 from typing import Any
 from .scanner import run_ps_script, get_scan_profile
 
@@ -44,6 +45,8 @@ from .vendor_lookup import resolve_vendor
 SUPPORTED_SCAN_PROFILES = {"safe", "balanced", "aggressive"}
 
 def discover_all(community_override=None, log_fn=None, script_timeout_seconds=None, scan_profile="balanced"):
+    run_started_monotonic = time.monotonic()
+
     def log(msg):
         if log_fn: log_fn(msg)
 
@@ -121,6 +124,8 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
     log("Generating final audit report...")
     # generate the readiness report
     report = report_readiness(interfaces, routes, subnets)
+    run_finished_monotonic = time.monotonic()
+    run_duration_seconds = run_finished_monotonic - run_started_monotonic
     
     summary = {
         "interfaces": interfaces,
@@ -135,6 +140,9 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
         "snmp_data": snmp_details,
         "scan_profile": normalized_profile,
         "script_timeout_seconds": script_timeout_seconds,
+        "run_started_monotonic": run_started_monotonic,
+        "run_finished_monotonic": run_finished_monotonic,
+        "run_duration_seconds": run_duration_seconds,
     }
     
     return summary
