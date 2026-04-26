@@ -138,7 +138,11 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
         
     host_details = []
     snmp_details = []
+    host_enum_target_count = 0
+    snmp_target_count = 0
     if found_ips:
+        host_enum_target_count = len(found_ips)
+        snmp_target_count = len(found_ips)
         log(f"Running WMI/CIM enumeration on {len(found_ips)} hosts...")
         host_details = run_ps_script("host_enum.ps1", args=found_ips, timeout_seconds=script_timeout_seconds)
         log("Attempting SNMP credential rotation on detected hardware...")
@@ -161,6 +165,8 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
         "scan_data": _as_dict_list(scan_results),
         "scan_subnet_count": scan_subnet_count,
         "responsive_endpoint_count": responsive_endpoint_count,
+        "host_enum_target_count": host_enum_target_count,
+        "snmp_target_count": snmp_target_count,
         "host_data": host_details if isinstance(host_details, list) else [],
         "snmp_data": snmp_details,
         "scan_profile": normalized_profile,
