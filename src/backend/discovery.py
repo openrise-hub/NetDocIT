@@ -43,6 +43,8 @@ from .snmp_engine import scan_appliances
 from .vendor_lookup import resolve_vendor
 
 SUPPORTED_SCAN_PROFILES = {"safe", "balanced", "aggressive"}
+DEFAULT_SCRIPT_TIMEOUT_SECONDS = 60
+MAX_SCRIPT_TIMEOUT_SECONDS = 300
 
 def discover_all(community_override=None, log_fn=None, script_timeout_seconds=None, scan_profile="balanced"):
     run_started_monotonic = time.monotonic()
@@ -55,6 +57,7 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
         normalized_profile = "balanced"
 
     timeout_source = "override"
+    timeout_was_sanitized = False
     if script_timeout_seconds is None:
         timeout_source = "profile"
         script_timeout_seconds = get_scan_profile(normalized_profile)["script_timeout"]
@@ -62,11 +65,13 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
     if not isinstance(script_timeout_seconds, (int, float)) or script_timeout_seconds <= 0:
         if timeout_source == "override":
             timeout_source = "fallback"
-        script_timeout_seconds = 60
-    if script_timeout_seconds > 300:
+        timeout_was_sanitized = True
+        script_timeout_seconds = DEFAULT_SCRIPT_TIMEOUT_SECONDS
+    if script_timeout_seconds > MAX_SCRIPT_TIMEOUT_SECONDS:
         if timeout_source == "override":
             timeout_source = "fallback"
-        script_timeout_seconds = 300
+        timeout_was_sanitized = True
+        script_timeout_seconds = MAX_SCRIPT_TIMEOUT_SECONDS
 
     # unified entry point for environmental mapping
     log("Initializing local interface database...")
@@ -147,6 +152,11 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
         "scan_profile": normalized_profile,
         "script_timeout_seconds": script_timeout_seconds,
         "script_timeout_source": timeout_source,
+        "script_timeout_was_sanitized": timeout_was_sanitized,
+        "timeout_policy": {
+            "default_seconds": DEFAULT_SCRIPT_TIMEOUT_SECONDS,
+            "max_seconds": MAX_SCRIPT_TIMEOUT_SECONDS,
+        },
         "run_started_monotonic": run_started_monotonic,
         "run_finished_monotonic": run_finished_monotonic,
         "run_duration_seconds": run_duration_seconds,
