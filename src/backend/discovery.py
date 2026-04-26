@@ -72,6 +72,15 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
             timeout_source = "fallback"
         timeout_was_sanitized = True
         script_timeout_seconds = MAX_SCRIPT_TIMEOUT_SECONDS
+    if isinstance(script_timeout_seconds, float):
+        if not script_timeout_seconds.is_integer():
+            timeout_was_sanitized = True
+        script_timeout_seconds = int(script_timeout_seconds)
+    if script_timeout_seconds < 1:
+        if timeout_source == "override":
+            timeout_source = "fallback"
+        timeout_was_sanitized = True
+        script_timeout_seconds = 1
 
     # unified entry point for environmental mapping
     log("Initializing local interface database...")
