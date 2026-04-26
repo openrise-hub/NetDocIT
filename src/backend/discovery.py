@@ -44,6 +44,14 @@ def discover_all(community_override=None, log_fn=None):
     
     log("identifying active network adapters...")
     interfaces = get_active_interfaces()
+    for iface in interfaces:
+        save_interface({
+            "name": iface.get("name", "Unknown"),
+            "description": iface.get("description"),
+            "ipv4": iface.get("ipv4"),
+            "ipv6": iface.get("ipv6"),
+            "mac": iface.get("mac"),
+        })
     if interfaces:
         log(f"found {len(interfaces)} adapters: {', '.join([i.get('name','') for i in interfaces])}")
     
