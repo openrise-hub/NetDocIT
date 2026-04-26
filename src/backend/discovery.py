@@ -42,7 +42,7 @@ from .scanner import run_ps_script
 from .snmp_engine import scan_appliances
 from .vendor_lookup import resolve_vendor
 
-def discover_all(community_override=None, log_fn=None):
+def discover_all(community_override=None, log_fn=None, script_timeout_seconds=60):
     def log(msg):
         if log_fn: log_fn(msg)
 
@@ -80,7 +80,7 @@ def discover_all(community_override=None, log_fn=None):
     
     # execute live scanning cores
     log("starting icmp ping sweep across subnets...")
-    scan_results = run_ps_script("ping_sweep.ps1", args=subnets)
+    scan_results = run_ps_script("ping_sweep.ps1", args=subnets, timeout_seconds=script_timeout_seconds)
     
     if isinstance(scan_results, dict) and "error" in scan_results:
         log(f"scanner error: {scan_results['error']}")
