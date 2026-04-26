@@ -2,8 +2,23 @@ import subprocess
 import json
 import os
 
-def run_ps_script(script_name, args=None):
+
+SCAN_PROFILES = {
+    "safe": {"script_timeout": 90},
+    "balanced": {"script_timeout": 60},
+    "aggressive": {"script_timeout": 35},
+}
+
+
+def get_scan_profile(name):
+    profile_name = str(name or "balanced").lower()
+    return dict(SCAN_PROFILES.get(profile_name, SCAN_PROFILES["balanced"]))
+
+def run_ps_script(script_name, args=None, timeout_seconds=60):
     # execute a script from the scripts folder and return json
+    if not isinstance(timeout_seconds, (int, float)) or timeout_seconds <= 0:
+        timeout_seconds = 60
+
     script_path = os.path.join(os.path.dirname(__file__), 'scripts', script_name)
     
     if not os.path.exists(script_path):
@@ -14,7 +29,7 @@ def run_ps_script(script_name, args=None):
         cmd.extend(args)
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=60)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=timeout_seconds)
         return json.loads(result.stdout)
     except subprocess.TimeoutExpired:
         return [] # return empty on timeout
@@ -24,5 +39,4 @@ def run_ps_script(script_name, args=None):
         return {"error": "Script output was not valid JSON"}
 
 if __name__ == "__main__":
-    # simple test for the executor foundation
     print("Scanner module initialized.")

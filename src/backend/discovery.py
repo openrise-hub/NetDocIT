@@ -1,20 +1,21 @@
 import ipaddress
+import time
 from typing import Any
-from .scanner import run_ps_script
+from .scanner import run_ps_script, get_scan_profile
 
 def _as_dict_list(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict)]
 
-def get_active_interfaces():
-    res = run_ps_script("env_discovery.ps1")
+def get_active_interfaces(timeout_seconds=60):
+    res = run_ps_script("env_discovery.ps1", timeout_seconds=timeout_seconds)
     if isinstance(res, dict):
         return _as_dict_list(res.get("interfaces", []))
     return []
 
-def get_routing_table():
-    res = run_ps_script("env_discovery.ps1")
+def get_routing_table(timeout_seconds=60):
+    res = run_ps_script("env_discovery.ps1", timeout_seconds=timeout_seconds)
     if isinstance(res, dict):
         return _as_dict_list(res.get("routes", []))
     return []
@@ -38,20 +39,55 @@ def get_subnets(routes):
 from .config_parser import load_config
 from .database import init_db, save_interface, clear_interfaces, save_route, clear_routes, get_last_scans, get_all_subnets, add_log_entry
 from .processor import process_discovered_subnets, get_missing_subnets, get_priority_subnets
-from .scanner import run_ps_script
 from .snmp_engine import scan_appliances
 from .vendor_lookup import resolve_vendor
 
-def discover_all(community_override=None, log_fn=None):
+SUPPORTED_SCAN_PROFILES = {"safe", "balanced", "aggressive"}
+DEFAULT_SCRIPT_TIMEOUT_SECONDS = 60
+MAX_SCRIPT_TIMEOUT_SECONDS = 300
+
+def discover_all(community_override=None, log_fn=None, script_timeout_seconds=None, scan_profile="balanced"):
+    run_started_monotonic = time.monotonic()
+
     def log(msg):
         if log_fn: log_fn(msg)
+
+    normalized_profile = str(scan_profile or "balanced").lower()
+    if normalized_profile not in SUPPORTED_SCAN_PROFILES:
+        normalized_profile = "balanced"
+
+    timeout_source = "override"
+    timeout_was_sanitized = False
+    if script_timeout_seconds is None:
+        timeout_source = "profile"
+        script_timeout_seconds = get_scan_profile(normalized_profile)["script_timeout"]
+
+    if not isinstance(script_timeout_seconds, (int, float)) or script_timeout_seconds <= 0:
+        if timeout_source == "override":
+            timeout_source = "fallback"
+        timeout_was_sanitized = True
+        script_timeout_seconds = DEFAULT_SCRIPT_TIMEOUT_SECONDS
+    if script_timeout_seconds > MAX_SCRIPT_TIMEOUT_SECONDS:
+        if timeout_source == "override":
+            timeout_source = "fallback"
+        timeout_was_sanitized = True
+        script_timeout_seconds = MAX_SCRIPT_TIMEOUT_SECONDS
+    if isinstance(script_timeout_seconds, float):
+        if not script_timeout_seconds.is_integer():
+            timeout_was_sanitized = True
+        script_timeout_seconds = int(script_timeout_seconds)
+    if script_timeout_seconds < 1:
+        if timeout_source == "override":
+            timeout_source = "fallback"
+        timeout_was_sanitized = True
+        script_timeout_seconds = 1
 
     # unified entry point for environmental mapping
     log("Initializing local interface database...")
     clear_interfaces()
     
     log("identifying active network adapters...")
-    interfaces = get_active_interfaces()
+    interfaces = get_active_interfaces(timeout_seconds=script_timeout_seconds)
     for iface in interfaces:
         save_interface({
             "name": iface.get("name", "Unknown"),
@@ -65,7 +101,7 @@ def discover_all(community_override=None, log_fn=None):
     
     log("parsing os routing table...")
     clear_routes()
-    routes = get_routing_table()
+    routes = get_routing_table(timeout_seconds=script_timeout_seconds)
     for route in routes:
         save_route({
             "network": route.get("network"),
@@ -80,7 +116,7 @@ def discover_all(community_override=None, log_fn=None):
     
     # execute live scanning cores
     log("starting icmp ping sweep across subnets...")
-    scan_results = run_ps_script("ping_sweep.ps1", args=subnets)
+    scan_results = run_ps_script("ping_sweep.ps1", args=subnets, timeout_seconds=script_timeout_seconds)
     
     if isinstance(scan_results, dict) and "error" in scan_results:
         log(f"scanner error: {scan_results['error']}")
@@ -101,13 +137,15 @@ def discover_all(community_override=None, log_fn=None):
     snmp_details = []
     if found_ips:
         log(f"Running WMI/CIM enumeration on {len(found_ips)} hosts...")
-        host_details = run_ps_script("host_enum.ps1", args=found_ips)
+        host_details = run_ps_script("host_enum.ps1", args=found_ips, timeout_seconds=script_timeout_seconds)
         log("Attempting SNMP credential rotation on detected hardware...")
         snmp_details = scan_appliances(found_ips, communities=community_override)
     
     log("Generating final audit report...")
     # generate the readiness report
     report = report_readiness(interfaces, routes, subnets)
+    run_finished_monotonic = time.monotonic()
+    run_duration_seconds = run_finished_monotonic - run_started_monotonic
     
     summary = {
         "interfaces": interfaces,
@@ -119,7 +157,18 @@ def discover_all(community_override=None, log_fn=None):
         "gateways": report["gateways"],
         "scan_data": _as_dict_list(scan_results),
         "host_data": host_details if isinstance(host_details, list) else [],
-        "snmp_data": snmp_details
+        "snmp_data": snmp_details,
+        "scan_profile": normalized_profile,
+        "script_timeout_seconds": script_timeout_seconds,
+        "script_timeout_source": timeout_source,
+        "script_timeout_was_sanitized": timeout_was_sanitized,
+        "timeout_policy": {
+            "default_seconds": DEFAULT_SCRIPT_TIMEOUT_SECONDS,
+            "max_seconds": MAX_SCRIPT_TIMEOUT_SECONDS,
+        },
+        "run_started_monotonic": run_started_monotonic,
+        "run_finished_monotonic": run_finished_monotonic,
+        "run_duration_seconds": run_duration_seconds,
     }
     
     return summary
