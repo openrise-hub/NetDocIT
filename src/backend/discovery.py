@@ -41,12 +41,18 @@ from .processor import process_discovered_subnets, get_missing_subnets, get_prio
 from .snmp_engine import scan_appliances
 from .vendor_lookup import resolve_vendor
 
+SUPPORTED_SCAN_PROFILES = {"safe", "balanced", "aggressive"}
+
 def discover_all(community_override=None, log_fn=None, script_timeout_seconds=None, scan_profile="balanced"):
     def log(msg):
         if log_fn: log_fn(msg)
 
+    normalized_profile = str(scan_profile or "balanced").lower()
+    if normalized_profile not in SUPPORTED_SCAN_PROFILES:
+        normalized_profile = "balanced"
+
     if script_timeout_seconds is None:
-        script_timeout_seconds = get_scan_profile(scan_profile)["script_timeout"]
+        script_timeout_seconds = get_scan_profile(normalized_profile)["script_timeout"]
 
     if not isinstance(script_timeout_seconds, (int, float)) or script_timeout_seconds <= 0:
         script_timeout_seconds = 60
@@ -126,7 +132,9 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
         "gateways": report["gateways"],
         "scan_data": _as_dict_list(scan_results),
         "host_data": host_details if isinstance(host_details, list) else [],
-        "snmp_data": snmp_details
+        "snmp_data": snmp_details,
+        "scan_profile": normalized_profile,
+        "script_timeout_seconds": script_timeout_seconds,
     }
     
     return summary
