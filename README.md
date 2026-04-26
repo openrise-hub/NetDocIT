@@ -61,6 +61,18 @@ uv run netdocit
 - `topology.html`: Interactive topology map
 - `data/netdocit.sqlite`: Local scan database
 
+Generated report/map artifacts are intended as runtime outputs and can be regenerated on demand.
+
+## Source Of Truth
+
+- SNMP enrichment source of truth: `src/backend/snmp_engine.py` (Python `pysnmp` implementation)
+
+## Version Control Policy
+
+- Commit source code, tests, templates, and configuration
+- Do not rely on committed generated artifacts for operational state
+- Regenerate `REPORT.md`, `inventory.html`, and `topology.html` from current scan data when needed
+
 ## Commands
 
 - `scan` / `discover`: Run full discovery pipeline
