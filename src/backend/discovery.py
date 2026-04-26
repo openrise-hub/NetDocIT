@@ -51,7 +51,7 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=60
     clear_interfaces()
     
     log("identifying active network adapters...")
-    interfaces = get_active_interfaces()
+    interfaces = get_active_interfaces(timeout_seconds=script_timeout_seconds)
     for iface in interfaces:
         save_interface({
             "name": iface.get("name", "Unknown"),
@@ -65,7 +65,7 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=60
     
     log("parsing os routing table...")
     clear_routes()
-    routes = get_routing_table()
+    routes = get_routing_table(timeout_seconds=script_timeout_seconds)
     for route in routes:
         save_route({
             "network": route.get("network"),
