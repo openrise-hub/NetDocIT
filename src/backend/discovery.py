@@ -144,13 +144,19 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
     snmp_details = []
     host_enum_target_count = 0
     snmp_target_count = 0
+    host_enum_result_count = 0
+    snmp_result_count = 0
     if found_ips:
         host_enum_target_count = len(found_ips)
         snmp_target_count = len(found_ips)
         log(f"Running WMI/CIM enumeration on {len(found_ips)} hosts...")
         host_details = run_ps_script("host_enum.ps1", args=found_ips, timeout_seconds=script_timeout_seconds)
+        if isinstance(host_details, list):
+            host_enum_result_count = len(_as_dict_list(host_details))
         log("Attempting SNMP credential rotation on detected hardware...")
         snmp_details = scan_appliances(found_ips, communities=community_override)
+        if isinstance(snmp_details, list):
+            snmp_result_count = len(_as_dict_list(snmp_details))
     
     log("Generating final audit report...")
     # generate the readiness report
@@ -173,6 +179,8 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
         "responsive_endpoint_count": responsive_endpoint_count,
         "host_enum_target_count": host_enum_target_count,
         "snmp_target_count": snmp_target_count,
+        "host_enum_result_count": host_enum_result_count,
+        "snmp_result_count": snmp_result_count,
         "host_data": host_details if isinstance(host_details, list) else [],
         "snmp_data": snmp_details,
         "scan_profile": normalized_profile,
