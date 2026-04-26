@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import ipaddress
 
 DB_PATH = "data/netdocit.sqlite"
 
@@ -58,6 +59,19 @@ def init_db():
             )
         ''')
 
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS routes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                network TEXT NOT NULL,
+                netmask TEXT,
+                prefix_len TEXT,
+                gateway TEXT,
+                interface TEXT,
+                local_addr TEXT,
+                last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         # credentials for deep scanning (SNMP, etc.)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS credentials (
@@ -82,12 +96,13 @@ def init_db():
 
 def add_log_entry(level, message, source="System"):
     """Adds a persistent log entry to the database."""
+    normalized_level = str(level).upper()
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
             INSERT INTO logs (level, message, source)
             VALUES (?, ?, ?)
-        ''', (level, message, source))
+        ''', (normalized_level, message, source))
         conn.commit()
 
 def get_logs(limit=50):
@@ -153,14 +168,50 @@ def get_all_interfaces():
         return [{"name": r[0], "description": r[1], "ipv4": r[2], "ipv6": r[3], "mac": r[4]} for r in cursor.fetchall()]
 
 def get_all_routes():
-    # fetch the routing table (empty for now) todo: ANDRICK update this
-    return []
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT network, netmask, prefix_len, gateway, interface, local_addr FROM routes')
+        return [
+            {
+                "network": r[0],
+                "netmask": r[1],
+                "prefix_len": r[2],
+                "gateway": r[3],
+                "interface": r[4],
+                "local_addr": r[5],
+            }
+            for r in cursor.fetchall()
+        ]
+
+
+def save_route(route):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO routes (network, netmask, prefix_len, gateway, interface, local_addr, last_seen)
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ''', (
+            route.get('network'),
+            route.get('netmask'),
+            route.get('prefix_len'),
+            route.get('gateway'),
+            route.get('interface'),
+            route.get('local_addr'),
+        ))
+        conn.commit()
 
 def clear_interfaces():
     """Clears out old network adapters to start a fresh scan."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('DELETE FROM interfaces')
+        conn.commit()
+
+
+def clear_routes():
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM routes')
         conn.commit()
 
 def ingest_live_data(summary):
@@ -216,8 +267,17 @@ def get_devices_sorted_by_ip():
     # fetch all devices sorted numerically by IP
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT ip, mac, hostname, os, vendor FROM devices ORDER BY ip ASC')
-        return cursor.fetchall()
+        cursor.execute('SELECT ip, mac, hostname, os, vendor FROM devices')
+        rows = cursor.fetchall()
+
+    def sort_key(row):
+        ip = row[0]
+        try:
+            return (0, ipaddress.ip_address(ip))
+        except ValueError:
+            return (1, ip)
+
+    return sorted(rows, key=sort_key)
 
 def get_device_counts_by_os():
     # count windows hosts vs network appliances
