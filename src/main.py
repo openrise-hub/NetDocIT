@@ -17,7 +17,7 @@ def is_admin():
         return False
 
 
-def install_scheduler(time_str="08:00"):
+def install_scheduler(time_str="08:00", profile="balanced"):
     import subprocess
     import os
 
@@ -26,7 +26,7 @@ def install_scheduler(time_str="08:00"):
 
     cwd = os.getcwd()
     task_name = "NetDocIT-DailyDiscovery"
-    cmd = f'uv run netdocit scan --quiet'
+    cmd = f'uv run netdocit scan --quiet --profile {profile}'
 
     try:
         subprocess.run([
@@ -311,7 +311,7 @@ def main():
         console.print(table)
 
     elif choice in ['s', 'schedule']:
-        result = install_scheduler(sched_time)
+        result = install_scheduler(sched_time, profile=args.profile)
         if result is True:
             q_print(f"\nSuccess: Daily {sched_time} scan registered in Windows Task Scheduler.")
         elif result == "E_ADMIN":
