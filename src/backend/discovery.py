@@ -163,6 +163,7 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
     report = report_readiness(interfaces, routes, subnets)
     run_finished_monotonic = time.monotonic()
     run_duration_seconds = run_finished_monotonic - run_started_monotonic
+    scan_timeout_exceeded = run_duration_seconds > script_timeout_seconds
     
     summary = {
         "interfaces": interfaces,
@@ -194,6 +195,7 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
         "run_started_monotonic": run_started_monotonic,
         "run_finished_monotonic": run_finished_monotonic,
         "run_duration_seconds": run_duration_seconds,
+        "scan_timeout_exceeded": scan_timeout_exceeded,
     }
 
     summary["host_data_count"] = len(_as_dict_list(summary["host_data"]))
