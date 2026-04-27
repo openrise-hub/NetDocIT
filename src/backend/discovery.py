@@ -1,6 +1,7 @@
 import ipaddress
 import time
 from typing import Any
+from .adaptive_scheduler import AdaptiveProbeScheduler, ProbeTask, PROBE_TYPES
 from .scanner import run_ps_script, get_scan_profile
 
 def _as_dict_list(value: Any) -> list[dict[str, Any]]:
@@ -45,6 +46,42 @@ from .vendor_lookup import resolve_vendor
 SUPPORTED_SCAN_PROFILES = {"safe", "balanced", "aggressive"}
 DEFAULT_SCRIPT_TIMEOUT_SECONDS = 60
 MAX_SCRIPT_TIMEOUT_SECONDS = 300
+
+
+def _merge_probe_metrics(
+    current: dict[str, dict[str, Any]],
+    incoming: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
+    for probe in PROBE_TYPES:
+        left = current.get(probe, {})
+        right = incoming.get(probe, {})
+
+        left_completed = int(left.get("completed", 0) or 0)
+        right_completed = int(right.get("completed", 0) or 0)
+        total_completed = left_completed + right_completed
+
+        left_avg = float(left.get("avg_latency_seconds", 0.0) or 0.0)
+        right_avg = float(right.get("avg_latency_seconds", 0.0) or 0.0)
+        weighted_avg = 0.0
+        if total_completed > 0:
+            weighted_avg = ((left_avg * left_completed) + (right_avg * right_completed)) / total_completed
+
+        merged[probe] = {
+            "submitted": int(left.get("submitted", 0) or 0) + int(right.get("submitted", 0) or 0),
+            "completed": total_completed,
+            "timeouts": int(left.get("timeouts", 0) or 0) + int(right.get("timeouts", 0) or 0),
+            "backpressure_events": int(left.get("backpressure_events", 0) or 0) + int(right.get("backpressure_events", 0) or 0),
+            "max_in_flight": max(int(left.get("max_in_flight", 0) or 0), int(right.get("max_in_flight", 0) or 0)),
+            "throughput_per_second": float(left.get("throughput_per_second", 0.0) or 0.0)
+            + float(right.get("throughput_per_second", 0.0) or 0.0),
+            "timeout_ratio": (int(left.get("timeouts", 0) or 0) + int(right.get("timeouts", 0) or 0)) / total_completed
+            if total_completed > 0
+            else 0.0,
+            "avg_latency_seconds": weighted_avg,
+        }
+
+    return merged
 
 def discover_all(community_override=None, log_fn=None, script_timeout_seconds=None, scan_profile="balanced"):
     run_started_monotonic = time.monotonic()
@@ -117,7 +154,20 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
     
     # execute live scanning cores
     log("starting icmp ping sweep across subnets...")
-    scan_results = run_ps_script("ping_sweep.ps1", args=subnets, timeout_seconds=script_timeout_seconds)
+    scheduler = AdaptiveProbeScheduler()
+    icmp_run = scheduler.run(
+        [
+            ProbeTask(
+                "icmp",
+                "global",
+                "subnet-batch",
+                lambda: run_ps_script("ping_sweep.ps1", args=subnets, timeout_seconds=script_timeout_seconds),
+            )
+        ]
+    )
+    probe_metrics = icmp_run["metrics"]
+    icmp_results = icmp_run["results"].get("icmp", [])
+    scan_results = icmp_results[0] if icmp_results else []
     scan_error = False
     scan_error_message = None
     
@@ -150,11 +200,30 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
         host_enum_target_count = len(found_ips)
         snmp_target_count = len(found_ips)
         log(f"Running WMI/CIM enumeration on {len(found_ips)} hosts...")
-        host_details = run_ps_script("host_enum.ps1", args=found_ips, timeout_seconds=script_timeout_seconds)
+        enrichment_run = scheduler.run(
+            [
+                ProbeTask(
+                    "wmi",
+                    "global",
+                    "host-enum-batch",
+                    lambda: run_ps_script("host_enum.ps1", args=found_ips, timeout_seconds=script_timeout_seconds),
+                ),
+                ProbeTask(
+                    "snmp",
+                    "global",
+                    "snmp-batch",
+                    lambda: scan_appliances(found_ips, communities=community_override),
+                ),
+            ]
+        )
+        probe_metrics = _merge_probe_metrics(probe_metrics, enrichment_run["metrics"])
+        wmi_results = enrichment_run["results"].get("wmi", [])
+        host_details = wmi_results[0] if wmi_results else []
         if isinstance(host_details, list):
             host_enum_result_count = len(_as_dict_list(host_details))
         log("Attempting SNMP credential rotation on detected hardware...")
-        snmp_details = scan_appliances(found_ips, communities=community_override)
+        snmp_results = enrichment_run["results"].get("snmp", [])
+        snmp_details = snmp_results[0] if snmp_results else []
         if isinstance(snmp_details, list):
             snmp_result_count = len(_as_dict_list(snmp_details))
     
@@ -202,6 +271,7 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
         "run_duration_seconds": run_duration_seconds,
         "scan_timeout_exceeded": scan_timeout_exceeded,
         "scan_completion_state": scan_completion_state,
+        "probe_metrics": probe_metrics,
     }
 
     summary["host_data_count"] = len(_as_dict_list(summary["host_data"]))
