@@ -195,6 +195,9 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
         "run_finished_monotonic": run_finished_monotonic,
         "run_duration_seconds": run_duration_seconds,
     }
+
+    summary["host_data_count"] = len(_as_dict_list(summary["host_data"]))
+    summary["snmp_data_count"] = len(_as_dict_list(summary["snmp_data"]))
     
     return summary
 
