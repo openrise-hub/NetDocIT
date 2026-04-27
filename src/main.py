@@ -101,6 +101,11 @@ def run_discovery(app=None, community=None, scan_profile="balanced", script_time
     add_log_entry("INFO", f"Discovery finished. Found {len(devices)} devices.", "Scanner")
 
     if app:
+        app.last_discovery_summary = discovery
+        if discovery.get("scan_timeout_exceeded"):
+            app.add_log(
+                f"[bold yellow]Discovery exceeded its timeout budget after {discovery.get('run_duration_seconds', 0):.1f}s."
+            )
         app.state = "MENU"
 
     return discovery

@@ -200,6 +200,14 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
 
     summary["host_data_count"] = len(_as_dict_list(summary["host_data"]))
     summary["snmp_data_count"] = len(_as_dict_list(summary["snmp_data"]))
+
+    if scan_timeout_exceeded:
+        timeout_message = (
+            f"Discovery exceeded its timeout budget after {run_duration_seconds:.1f}s "
+            f"(limit {script_timeout_seconds}s)"
+        )
+        log(timeout_message)
+        add_log_entry("WARNING", timeout_message, "Scanner")
     
     return summary
 

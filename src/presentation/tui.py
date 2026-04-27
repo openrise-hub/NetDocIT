@@ -10,6 +10,7 @@ class DashboardApp:
         self.state = "MENU"
         self.log_buffer = [] 
         self.devices = [] # current session hosts
+        self.last_discovery_summary = None
         self.scroll_index = 0 # position for table windowing
         self._init_layout()
 
@@ -39,6 +40,8 @@ class DashboardApp:
             status = "[bold cyan]INVENTORY[/bold cyan]"
         elif self.state == "LOGS":
             status = "[bold blue]AUDIT[/bold blue]"
+        elif self.last_discovery_summary and self.last_discovery_summary.get("scan_timeout_exceeded"):
+            status = "[bold red]OVER BUDGET[/bold red]"
             
         return Panel(
             Layout(
@@ -58,8 +61,16 @@ class DashboardApp:
 
     def make_main_view(self):
         if self.state == "MENU":
+            warning = ""
+            if self.last_discovery_summary and self.last_discovery_summary.get("scan_timeout_exceeded"):
+                duration = self.last_discovery_summary.get("run_duration_seconds", 0)
+                limit = self.last_discovery_summary.get("script_timeout_seconds", 0)
+                warning = (
+                    f"[bold yellow]Last discovery exceeded its timeout budget.[/bold yellow]\n"
+                    f"[dim]{duration:.1f}s ran against a {limit}s limit.[/dim]\n\n"
+                )
             return Panel(
-                "\n\n[dim]Select an option to begin. Your environment will be mapped in real-time.[/dim]",
+                f"\n\n{warning}[dim]Select an option to begin. Your environment will be mapped in real-time.[/dim]",
                 title="Dashboard", border_style="dim"
             )
         elif self.state == "SCANNING":
