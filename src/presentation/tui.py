@@ -40,7 +40,7 @@ class DashboardApp:
             status = "[bold cyan]INVENTORY[/bold cyan]"
         elif self.state == "LOGS":
             status = "[bold blue]AUDIT[/bold blue]"
-        elif self.last_discovery_summary and self.last_discovery_summary.get("scan_timeout_exceeded"):
+        elif self.last_discovery_summary and self.last_discovery_summary.get("scan_completion_state") == "budget_exceeded":
             status = "[bold red]OVER BUDGET[/bold red]"
             
         return Panel(
@@ -62,7 +62,7 @@ class DashboardApp:
     def make_main_view(self):
         if self.state == "MENU":
             warning = ""
-            if self.last_discovery_summary and self.last_discovery_summary.get("scan_timeout_exceeded"):
+            if self.last_discovery_summary and self.last_discovery_summary.get("scan_completion_state") == "budget_exceeded":
                 duration = self.last_discovery_summary.get("run_duration_seconds", 0)
                 limit = self.last_discovery_summary.get("script_timeout_seconds", 0)
                 warning = (

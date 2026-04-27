@@ -8,7 +8,7 @@ class TestTuiTimeoutWarning(unittest.TestCase):
         app = DashboardApp()
         app.state = "MENU"
         app.last_discovery_summary = {
-            "scan_timeout_exceeded": True,
+            "scan_completion_state": "budget_exceeded",
             "run_duration_seconds": 5.0,
             "script_timeout_seconds": 3,
         }

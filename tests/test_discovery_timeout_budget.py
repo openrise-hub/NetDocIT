@@ -34,6 +34,7 @@ class TestDiscoveryTimeoutBudget(unittest.TestCase):
                 result = discovery.discover_all(script_timeout_seconds=3, log_fn=log_messages.append)
 
                 self.assertTrue(result["scan_timeout_exceeded"])
+                self.assertEqual(result["scan_completion_state"], "budget_exceeded")
                 self.assertEqual(result["run_duration_seconds"], 5.0)
                 self.assertTrue(any("timeout budget" in message for message in log_messages))
                 add_log_entry.assert_called_once()
