@@ -17,7 +17,7 @@ def is_admin():
         return False
 
 
-def install_scheduler(time_str="08:00", profile="balanced"):
+def install_scheduler(time_str="08:00", profile="balanced", timeout_seconds=None):
     import subprocess
     import os
 
@@ -27,6 +27,8 @@ def install_scheduler(time_str="08:00", profile="balanced"):
     cwd = os.getcwd()
     task_name = "NetDocIT-DailyDiscovery"
     cmd = f'uv run netdocit scan --quiet --profile {profile}'
+    if timeout_seconds is not None:
+        cmd += f' --timeout {timeout_seconds:g}'
 
     try:
         subprocess.run([
@@ -63,14 +65,19 @@ def show_dashboard():
     return choice
 
 
-def run_discovery(app=None, community=None, scan_profile="balanced"):
+def run_discovery(app=None, community=None, scan_profile="balanced", script_timeout_seconds=None):
     from .backend.database import add_log_entry
     add_log_entry("INFO", "Starting automated network discovery", "Scanner")
 
     if app:
         app.state = "SCANNING"
 
-    discovery = discover_all(community_override=community, log_fn=app.add_log if app else None, scan_profile=scan_profile)
+    discovery = discover_all(
+        community_override=community,
+        log_fn=app.add_log if app else None,
+        scan_profile=scan_profile,
+        script_timeout_seconds=script_timeout_seconds,
+    )
 
     ingest_live_data(discovery)
 
@@ -94,6 +101,11 @@ def run_discovery(app=None, community=None, scan_profile="balanced"):
     add_log_entry("INFO", f"Discovery finished. Found {len(devices)} devices.", "Scanner")
 
     if app:
+        app.last_discovery_summary = discovery
+        if discovery.get("scan_timeout_exceeded"):
+            app.add_log(
+                f"[bold yellow]Discovery exceeded its timeout budget after {discovery.get('run_duration_seconds', 0):.1f}s."
+            )
         app.state = "MENU"
 
     return discovery
@@ -183,6 +195,7 @@ def main():
     parser.add_argument("-v", "--version", action="version", version=f"NetDocIT v{__version__}")
     parser.add_argument("-q", "--quiet", "--silent", action="store_true", dest="quiet", help="Background mode")
     parser.add_argument("-t", "--time", default="08:00", help="Time for daily schedule (HH:mm)")
+    parser.add_argument("--timeout", type=float, help="Script timeout override in seconds")
     parser.add_argument("-c", "--community", help="SNMP community string override")
     parser.add_argument("-p", "--profile", choices=["safe", "balanced", "aggressive"], default="balanced", help="Scan profile")
 
@@ -221,7 +234,12 @@ def main():
 
                             def run():
                                 try:
-                                    d = run_discovery(app=app, community=args.community, scan_profile=args.profile)
+                                    d = run_discovery(
+                                        app=app,
+                                        community=args.community,
+                                        scan_profile=args.profile,
+                                        script_timeout_seconds=args.timeout,
+                                    )
                                     run_mapping(d)
                                     run_reporting()
                                 except Exception as exc:
@@ -267,7 +285,12 @@ def main():
         app = DashboardApp()
         try:
             with Live(app.render(), console=app.console, screen=True) as live:
-                discovery = run_discovery(app=app, community=args.community, scan_profile=args.profile)
+                discovery = run_discovery(
+                    app=app,
+                    community=args.community,
+                    scan_profile=args.profile,
+                    script_timeout_seconds=args.timeout,
+                )
                 live.update(app.render())
                 run_mapping(discovery)
                 run_reporting()
@@ -311,7 +334,10 @@ def main():
         console.print(table)
 
     elif choice in ['s', 'schedule']:
-        result = install_scheduler(sched_time, profile=args.profile)
+        if args.timeout is None:
+            result = install_scheduler(sched_time, profile=args.profile)
+        else:
+            result = install_scheduler(sched_time, profile=args.profile, timeout_seconds=args.timeout)
         if result is True:
             q_print(f"\nSuccess: Daily {sched_time} scan registered in Windows Task Scheduler.")
         elif result == "E_ADMIN":
