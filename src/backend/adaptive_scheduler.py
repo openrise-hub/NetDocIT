@@ -241,6 +241,8 @@ class AdaptiveProbeScheduler:
                 return payload, failure_class == "timeout", retries_used
             except Exception as exc:
                 failure_class = self._classify_failure(None, exc)
+                if failure_class is None:
+                    failure_class = "error"
                 if retries_used < self._allowed_retries(probe, failure_class):
                     retries_used += 1
                     continue

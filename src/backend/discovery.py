@@ -104,6 +104,12 @@ def discover_all(
     def log(msg):
         if log_fn: log_fn(msg)
 
+    def persist_log(level, message, source="Scanner"):
+        try:
+            add_log_entry(level, message, source)
+        except Exception:
+            return
+
     def should_abort() -> bool:
         if abort_signal is None:
             return False
@@ -327,10 +333,10 @@ def discover_all(
             f"(limit {script_timeout_seconds}s)"
         )
         log(timeout_message)
-        add_log_entry("WARNING", timeout_message, "Scanner")
+        persist_log("WARNING", timeout_message, "Scanner")
 
     if sentinel_triggered:
-        add_log_entry("WARNING", "Discovery aborted by sentinel signal.", "Scanner")
+        persist_log("WARNING", "Discovery aborted by sentinel signal.", "Scanner")
     
     return summary
 
