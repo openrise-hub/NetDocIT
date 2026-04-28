@@ -42,6 +42,7 @@ from .database import init_db, save_interface, clear_interfaces, save_route, cle
 from .processor import process_discovered_subnets, get_missing_subnets, get_priority_subnets
 from .snmp_engine import scan_appliances
 from .vendor_lookup import resolve_vendor
+from .protocol_depth import build_service_identity_summary
 
 SUPPORTED_SCAN_PROFILES = {"safe", "balanced", "aggressive"}
 DEFAULT_SCRIPT_TIMEOUT_SECONDS = 60
@@ -326,6 +327,7 @@ def discover_all(
 
     summary["host_data_count"] = len(_as_dict_list(summary["host_data"]))
     summary["snmp_data_count"] = len(_as_dict_list(summary["snmp_data"]))
+    summary["service_identity"] = build_service_identity_summary(summary)
 
     if scan_timeout_exceeded:
         timeout_message = (
