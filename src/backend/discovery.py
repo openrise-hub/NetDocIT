@@ -40,7 +40,19 @@ def get_subnets(routes):
 from .config_parser import load_config
 from .database import init_db, save_interface, clear_interfaces, save_route, clear_routes, get_last_scans, get_all_subnets, add_log_entry
 from .processor import process_discovered_subnets, get_missing_subnets, get_priority_subnets
-from .snmp_engine import scan_appliances
+try:
+    from .snmp_engine import scan_appliances  # type: ignore
+except Exception:
+    def scan_appliances(*args, **kwargs):
+        return []
+
+
+def run_scan_with_probes(targets, probe_impl, max_workers=4):
+    # Lazy import to avoid heavy optional deps at module import time
+    from .probe_runner import ProbeTaskRunner
+
+    runner = ProbeTaskRunner(max_workers=max_workers)
+    return runner.run(targets, probe_impl)
 from .vendor_lookup import resolve_vendor
 from .protocol_depth import build_service_identity_summary
 
