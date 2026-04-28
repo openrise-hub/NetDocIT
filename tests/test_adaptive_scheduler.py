@@ -56,6 +56,101 @@ class TestAdaptiveScheduler(unittest.TestCase):
             self.assertIn("submitted", result["metrics"][probe])
             self.assertIn("completed", result["metrics"][probe])
 
+    def test_timeout_model_uses_latency_percentile(self):
+        latencies = [0.001, 0.002, 0.004, 0.030]
+
+        def make_probe(delay):
+            def run():
+                time.sleep(delay)
+                return {"ok": True}
+
+            return run
+
+        tasks = [
+            ProbeTask("tcp", "10.0.2.0/24", f"tcp-{idx}", make_probe(delay))
+            for idx, delay in enumerate(latencies)
+        ]
+
+        scheduler = AdaptiveProbeScheduler(hard_limits={"icmp": 1, "tcp": 1, "snmp": 1, "wmi": 1})
+        result = scheduler.run(tasks)
+        tcp_metrics = result["metrics"]["tcp"]
+
+        self.assertGreater(tcp_metrics["latency_p95_seconds"], 0)
+        self.assertGreater(tcp_metrics["recommended_timeout_seconds"], tcp_metrics["latency_p95_seconds"])
+
+    def test_dynamic_scaling_reacts_to_high_latency_variance(self):
+        delays = [0.001, 0.030, 0.001, 0.030, 0.001, 0.030]
+
+        def make_probe(delay):
+            def run():
+                time.sleep(delay)
+                return {"ok": True}
+
+            return run
+
+        tasks = [
+            ProbeTask("tcp", "10.0.3.0/24", f"tcp-{idx}", make_probe(delay))
+            for idx, delay in enumerate(delays)
+        ]
+
+        scheduler = AdaptiveProbeScheduler(
+            hard_limits={"icmp": 1, "tcp": 4, "snmp": 1, "wmi": 1},
+            latency_spike_seconds=10.0,
+            timeout_ratio_threshold=1.0,
+            latency_variance_threshold=0.0001,
+        )
+        result = scheduler.run(tasks)
+
+        self.assertLess(result["soft_limits"]["tcp"], 4)
+        self.assertGreater(result["metrics"]["tcp"]["backpressure_events"], 0)
+
+    def test_retry_policy_by_probe_and_failure_class(self):
+        state = {"icmp": 0, "wmi": 0}
+
+        def icmp_flaky():
+            state["icmp"] += 1
+            if state["icmp"] < 2:
+                raise TimeoutError("icmp timeout")
+            return {"ok": True}
+
+        def wmi_flaky():
+            state["wmi"] += 1
+            raise TimeoutError("wmi timeout")
+
+        tasks = [
+            ProbeTask("icmp", "10.0.4.0/24", "icmp-host", icmp_flaky),
+            ProbeTask("wmi", "10.0.4.0/24", "wmi-host", wmi_flaky),
+        ]
+
+        scheduler = AdaptiveProbeScheduler(hard_limits={"icmp": 1, "tcp": 1, "snmp": 1, "wmi": 1})
+        result = scheduler.run(tasks)
+
+        self.assertEqual(result["metrics"]["icmp"]["retry_attempts"], 1)
+        self.assertEqual(result["metrics"]["wmi"]["retry_attempts"], 0)
+
+    def test_global_concurrency_ceiling_is_enforced(self):
+        def slow_probe():
+            time.sleep(0.02)
+            return {"ok": True}
+
+        tasks = [
+            ProbeTask("icmp", "10.0.5.0/24", f"icmp-{i}", slow_probe)
+            for i in range(4)
+        ]
+        tasks += [
+            ProbeTask("tcp", "10.0.6.0/24", f"tcp-{i}", slow_probe)
+            for i in range(4)
+        ]
+
+        scheduler = AdaptiveProbeScheduler(
+            hard_limits={"icmp": 4, "tcp": 4, "snmp": 1, "wmi": 1},
+            global_worker_ceiling=2,
+        )
+        result = scheduler.run(tasks)
+
+        self.assertLessEqual(result["max_global_in_flight"], 2)
+        self.assertGreaterEqual(result["cpu_backpressure_events"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

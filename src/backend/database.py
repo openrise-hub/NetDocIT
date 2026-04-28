@@ -1,6 +1,8 @@
 import sqlite3
 import os
 import ipaddress
+import json
+import time
 from contextlib import contextmanager
 
 DB_PATH = "data/netdocit.sqlite"
@@ -63,6 +65,26 @@ def init_db():
                 devices_found INTEGER,
                 FOREIGN KEY (subnet_id) REFERENCES subnets(id)
             )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS probe_observations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scan_run_id TEXT NOT NULL,
+                probe_type TEXT NOT NULL,
+                ip TEXT,
+                mac TEXT,
+                hostname TEXT,
+                os TEXT,
+                vendor TEXT,
+                payload_json TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_probe_observations_scan_probe
+            ON probe_observations (scan_run_id, probe_type)
         ''')
 
         cursor.execute('''
@@ -220,8 +242,88 @@ def clear_routes():
         cursor.execute('DELETE FROM routes')
         conn.commit()
 
+def _observation_rows(summary, scan_run_id):
+    rows = []
+
+    for dev in summary.get('scan_data', []):
+        rows.append((
+            scan_run_id,
+            'icmp',
+            dev.get('ip'),
+            dev.get('mac'),
+            dev.get('hostname'),
+            dev.get('os'),
+            dev.get('vendor'),
+            json.dumps(dev, separators=(',', ':'), sort_keys=True),
+        ))
+
+    for host in summary.get('host_data', []):
+        rows.append((
+            scan_run_id,
+            'wmi',
+            host.get('ip'),
+            host.get('mac'),
+            host.get('hostname'),
+            host.get('os'),
+            host.get('vendor'),
+            json.dumps(host, separators=(',', ':'), sort_keys=True),
+        ))
+
+    for snmp in summary.get('snmp_data', []):
+        rows.append((
+            scan_run_id,
+            'snmp',
+            snmp.get('ip'),
+            snmp.get('mac'),
+            snmp.get('sysName'),
+            snmp.get('sysDescr'),
+            snmp.get('vendor'),
+            json.dumps(snmp, separators=(',', ':'), sort_keys=True),
+        ))
+
+    return rows
+
+def persist_probe_observations(summary, scan_run_id=None, batch_size=200):
+    effective_run_id = str(scan_run_id or summary.get('scan_run_id') or f"scan-{time.time_ns()}")
+    effective_batch_size = max(1, int(batch_size))
+    rows = _observation_rows(summary, effective_run_id)
+
+    if not rows:
+        return effective_run_id, 0
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        for offset in range(0, len(rows), effective_batch_size):
+            chunk = rows[offset:offset + effective_batch_size]
+            cursor.executemany('''
+                INSERT INTO probe_observations (
+                    scan_run_id,
+                    probe_type,
+                    ip,
+                    mac,
+                    hostname,
+                    os,
+                    vendor,
+                    payload_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', chunk)
+        conn.commit()
+
+    return effective_run_id, len(rows)
+
 def ingest_live_data(summary):
     """Parses live scan, cim, and snmp data and inserts it into the database."""
+    scan_run_id, observation_count = persist_probe_observations(summary)
+
+    if summary.get('scan_completion_state') == 'aborted':
+        return {
+            'scan_run_id': scan_run_id,
+            'observation_count': observation_count,
+            'resolved_host_count': 0,
+            'resolved_state_updated': False,
+        }
+
     devices_map = {}
     
     # base network scan (ping sweep & arp)
@@ -268,6 +370,13 @@ def ingest_live_data(summary):
             VALUES (?, ?, ?, ?, ?)
         ''', devices_tuples)
         conn.commit()
+
+    return {
+        'scan_run_id': scan_run_id,
+        'observation_count': observation_count,
+        'resolved_host_count': len(devices_tuples),
+        'resolved_state_updated': True,
+    }
 
 def get_devices_sorted_by_ip():
     # fetch all devices sorted numerically by IP

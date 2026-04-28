@@ -33,6 +33,8 @@ class TestDiscoveryScanErrorMetadata(unittest.TestCase):
 
                 self.assertTrue(result["scan_error"])
                 self.assertEqual(result["scan_error_message"], "ping timeout")
+                self.assertEqual(result["scan_completion_state"], "scan_error")
+                self.assertEqual(result["scan_completion_reason"], "scan_script_error")
                 self.assertEqual(result["scan_data"], [])
 
 

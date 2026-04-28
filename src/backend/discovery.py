@@ -79,15 +79,46 @@ def _merge_probe_metrics(
             if total_completed > 0
             else 0.0,
             "avg_latency_seconds": weighted_avg,
+            "latency_p95_seconds": max(
+                float(left.get("latency_p95_seconds", 0.0) or 0.0),
+                float(right.get("latency_p95_seconds", 0.0) or 0.0),
+            ),
+            "recommended_timeout_seconds": max(
+                float(left.get("recommended_timeout_seconds", 0.0) or 0.0),
+                float(right.get("recommended_timeout_seconds", 0.0) or 0.0),
+            ),
+            "retry_attempts": int(left.get("retry_attempts", 0) or 0) + int(right.get("retry_attempts", 0) or 0),
         }
 
     return merged
 
-def discover_all(community_override=None, log_fn=None, script_timeout_seconds=None, scan_profile="balanced"):
+def discover_all(
+    community_override=None,
+    log_fn=None,
+    script_timeout_seconds=None,
+    scan_profile="balanced",
+    abort_signal=None,
+):
     run_started_monotonic = time.monotonic()
 
     def log(msg):
         if log_fn: log_fn(msg)
+
+    def persist_log(level, message, source="Scanner"):
+        try:
+            add_log_entry(level, message, source)
+        except Exception:
+            return
+
+    def should_abort() -> bool:
+        if abort_signal is None:
+            return False
+        if not callable(abort_signal):
+            return False
+        try:
+            return bool(abort_signal())
+        except Exception:
+            return False
 
     normalized_profile = str(scan_profile or "balanced").lower()
     if normalized_profile not in SUPPORTED_SCAN_PROFILES:
@@ -155,19 +186,27 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
     # execute live scanning cores
     log("starting icmp ping sweep across subnets...")
     scheduler = AdaptiveProbeScheduler()
-    icmp_run = scheduler.run(
-        [
-            ProbeTask(
-                "icmp",
-                "global",
-                "subnet-batch",
-                lambda: run_ps_script("ping_sweep.ps1", args=subnets, timeout_seconds=script_timeout_seconds),
-            )
-        ]
-    )
-    probe_metrics = icmp_run["metrics"]
-    icmp_results = icmp_run["results"].get("icmp", [])
-    scan_results = icmp_results[0] if icmp_results else []
+    probe_metrics = scheduler.run([])["metrics"]
+    sentinel_triggered = False
+    scan_results = []
+
+    if should_abort():
+        sentinel_triggered = True
+        log("Discovery aborted by sentinel signal before ping sweep.")
+    else:
+        icmp_run = scheduler.run(
+            [
+                ProbeTask(
+                    "icmp",
+                    "global",
+                    "subnet-batch",
+                    lambda: run_ps_script("ping_sweep.ps1", args=subnets, timeout_seconds=script_timeout_seconds),
+                )
+            ]
+        )
+        probe_metrics = _merge_probe_metrics(probe_metrics, icmp_run["metrics"])
+        icmp_results = icmp_run["results"].get("icmp", [])
+        scan_results = icmp_results[0] if icmp_results else []
     scan_error = False
     scan_error_message = None
     
@@ -199,33 +238,37 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
     if found_ips:
         host_enum_target_count = len(found_ips)
         snmp_target_count = len(found_ips)
-        log(f"Running WMI/CIM enumeration on {len(found_ips)} hosts...")
-        enrichment_run = scheduler.run(
-            [
-                ProbeTask(
-                    "wmi",
-                    "global",
-                    "host-enum-batch",
-                    lambda: run_ps_script("host_enum.ps1", args=found_ips, timeout_seconds=script_timeout_seconds),
-                ),
-                ProbeTask(
-                    "snmp",
-                    "global",
-                    "snmp-batch",
-                    lambda: scan_appliances(found_ips, communities=community_override),
-                ),
-            ]
-        )
-        probe_metrics = _merge_probe_metrics(probe_metrics, enrichment_run["metrics"])
-        wmi_results = enrichment_run["results"].get("wmi", [])
-        host_details = wmi_results[0] if wmi_results else []
-        if isinstance(host_details, list):
-            host_enum_result_count = len(_as_dict_list(host_details))
-        log("Attempting SNMP credential rotation on detected hardware...")
-        snmp_results = enrichment_run["results"].get("snmp", [])
-        snmp_details = snmp_results[0] if snmp_results else []
-        if isinstance(snmp_details, list):
-            snmp_result_count = len(_as_dict_list(snmp_details))
+        if should_abort():
+            sentinel_triggered = True
+            log("Discovery aborted by sentinel signal before host enrichment.")
+        else:
+            log(f"Running WMI/CIM enumeration on {len(found_ips)} hosts...")
+            enrichment_run = scheduler.run(
+                [
+                    ProbeTask(
+                        "wmi",
+                        "global",
+                        "host-enum-batch",
+                        lambda: run_ps_script("host_enum.ps1", args=found_ips, timeout_seconds=script_timeout_seconds),
+                    ),
+                    ProbeTask(
+                        "snmp",
+                        "global",
+                        "snmp-batch",
+                        lambda: scan_appliances(found_ips, communities=community_override),
+                    ),
+                ]
+            )
+            probe_metrics = _merge_probe_metrics(probe_metrics, enrichment_run["metrics"])
+            wmi_results = enrichment_run["results"].get("wmi", [])
+            host_details = wmi_results[0] if wmi_results else []
+            if isinstance(host_details, list):
+                host_enum_result_count = len(_as_dict_list(host_details))
+            log("Attempting SNMP credential rotation on detected hardware...")
+            snmp_results = enrichment_run["results"].get("snmp", [])
+            snmp_details = snmp_results[0] if snmp_results else []
+            if isinstance(snmp_details, list):
+                snmp_result_count = len(_as_dict_list(snmp_details))
     
     log("Generating final audit report...")
     # generate the readiness report
@@ -234,10 +277,16 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
     run_duration_seconds = run_finished_monotonic - run_started_monotonic
     scan_timeout_exceeded = run_duration_seconds > script_timeout_seconds
     scan_completion_state = "completed"
-    if scan_error:
+    scan_completion_reason = "completed_normally"
+    if sentinel_triggered:
+        scan_completion_state = "aborted"
+        scan_completion_reason = "sentinel_triggered"
+    elif scan_error:
         scan_completion_state = "scan_error"
+        scan_completion_reason = "scan_script_error"
     elif scan_timeout_exceeded:
         scan_completion_state = "budget_exceeded"
+        scan_completion_reason = "runtime_budget_exceeded"
     
     summary = {
         "interfaces": interfaces,
@@ -271,6 +320,7 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
         "run_duration_seconds": run_duration_seconds,
         "scan_timeout_exceeded": scan_timeout_exceeded,
         "scan_completion_state": scan_completion_state,
+        "scan_completion_reason": scan_completion_reason,
         "probe_metrics": probe_metrics,
     }
 
@@ -283,7 +333,10 @@ def discover_all(community_override=None, log_fn=None, script_timeout_seconds=No
             f"(limit {script_timeout_seconds}s)"
         )
         log(timeout_message)
-        add_log_entry("WARNING", timeout_message, "Scanner")
+        persist_log("WARNING", timeout_message, "Scanner")
+
+    if sentinel_triggered:
+        persist_log("WARNING", "Discovery aborted by sentinel signal.", "Scanner")
     
     return summary
 
