@@ -34,6 +34,8 @@ class TestDiscoveryProbeMetrics(unittest.TestCase):
                 for probe in ("icmp", "tcp", "snmp", "wmi"):
                     self.assertIn(probe, result["probe_metrics"])
                     self.assertIn("throughput_per_second", result["probe_metrics"][probe])
+                    self.assertIn("recommended_timeout_seconds", result["probe_metrics"][probe])
+                    self.assertIn("retry_attempts", result["probe_metrics"][probe])
 
 
 if __name__ == "__main__":
