@@ -79,6 +79,17 @@ def run_discovery(app=None, community=None, scan_profile="balanced", script_time
         script_timeout_seconds=script_timeout_seconds,
     )
 
+    if discovery.get("scan_completion_state") == "blocked":
+        add_log_entry(
+            "WARN",
+            f"Discovery blocked: {discovery.get('scan_completion_reason')}",
+            "Scanner",
+        )
+        if app:
+            app.add_log(
+                f"[bold yellow]Discovery blocked: {discovery.get('scan_completion_reason')}"
+            )
+
     ingest_live_data(discovery)
 
     devices = get_devices_sorted_by_ip()
