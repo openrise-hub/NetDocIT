@@ -13,6 +13,9 @@ except ModuleNotFoundError:
         def __contains__(self, item):
             return item in self._graph._nodes
 
+        def __getitem__(self, item):
+            return self._graph._nodes[item]
+
         def __call__(self, data=False):
             if data:
                 return list(self._graph._nodes.items())
