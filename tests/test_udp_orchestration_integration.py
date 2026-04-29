@@ -71,7 +71,7 @@ class TestUdpOrchestrationIntegration(unittest.TestCase):
 
             ingest_result = database.ingest_live_data(summary)
             self.assertEqual(ingest_result["observation_count"], 2)
-            self.assertEqual(ingest_result["resolved_host_count"], 0)
+            self.assertEqual(ingest_result["resolved_host_count"], 1)
 
             with database.get_db_connection() as conn:
                 cursor = conn.cursor()
