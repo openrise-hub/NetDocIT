@@ -84,6 +84,37 @@ class TestStoragePipeline(unittest.TestCase):
         self.assertEqual(inserted, 350)
         self.assertEqual(count, 350)
 
+    def test_persist_probe_observations_includes_probe_evidence_rows(self):
+        summary = {
+            "probe_observations": [
+                {
+                    "target": "10.2.0.53",
+                    "port": 53,
+                    "service_hint": "dns",
+                    "normalized_banner": "bind 9.18",
+                    "service_state": "known",
+                }
+            ],
+            "scan_data": [],
+            "host_data": [],
+            "snmp_data": [],
+        }
+
+        scan_run_id, inserted = database.persist_probe_observations(summary)
+
+        with database.get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT probe_type, ip, payload_json FROM probe_observations WHERE scan_run_id = ?",
+                (scan_run_id,),
+            )
+            rows = cursor.fetchall()
+
+        self.assertEqual(inserted, 1)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][0], "dns")
+        self.assertEqual(rows[0][1], "10.2.0.53")
+
 
 if __name__ == "__main__":
     unittest.main()

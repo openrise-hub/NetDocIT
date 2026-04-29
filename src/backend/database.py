@@ -281,6 +281,22 @@ def _observation_rows(summary, scan_run_id):
             json.dumps(snmp, separators=(',', ':'), sort_keys=True),
         ))
 
+    for observation in summary.get('probe_observations', []):
+        if not isinstance(observation, dict):
+            continue
+        probe_type = observation.get('service_hint') or observation.get('probe_type') or 'probe'
+        target = observation.get('target') or observation.get('ip')
+        rows.append((
+            scan_run_id,
+            str(probe_type),
+            target,
+            observation.get('mac'),
+            observation.get('hostname'),
+            observation.get('os'),
+            observation.get('vendor'),
+            json.dumps(observation, separators=(',', ':'), sort_keys=True),
+        ))
+
     return rows
 
 def persist_probe_observations(summary, scan_run_id=None, batch_size=200):
