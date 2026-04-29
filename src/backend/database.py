@@ -5,6 +5,10 @@ import json
 import time
 from contextlib import contextmanager
 
+from .asset_identity import resolve_canonical_asset
+from .temporal_state import reduce_temporal_state
+from .subnet_placement import resolve_subnet_placement
+
 DB_PATH = "data/netdocit.sqlite"
 
 @contextmanager
@@ -34,6 +38,118 @@ def init_db():
         ''')
         
         #reachable subnets and their friendly tags
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS canonical_assets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                canonical_key TEXT UNIQUE NOT NULL,
+                preferred_label TEXT,
+                primary_mac TEXT,
+                primary_vendor TEXT,
+                primary_hostname TEXT,
+                confidence REAL DEFAULT 0.0,
+                conflict_state TEXT DEFAULT 'resolved',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS asset_aliases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                canonical_asset_id INTEGER NOT NULL,
+                alias_type TEXT NOT NULL,
+                alias_value TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (canonical_asset_id, alias_type, alias_value),
+                FOREIGN KEY (canonical_asset_id) REFERENCES canonical_assets(id)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS asset_sightings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                canonical_asset_id INTEGER,
+                sighting_key TEXT UNIQUE NOT NULL,
+                ip TEXT,
+                mac TEXT,
+                hostname TEXT,
+                vendor TEXT,
+                source TEXT,
+                payload_json TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (canonical_asset_id) REFERENCES canonical_assets(id)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS identity_conflicts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sighting_key TEXT UNIQUE NOT NULL,
+                conflict_reason TEXT NOT NULL,
+                evidence_json TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS asset_temporal_state (
+                canonical_asset_id INTEGER PRIMARY KEY,
+                first_seen DATETIME NOT NULL,
+                last_seen DATETIME NOT NULL,
+                seen_count INTEGER NOT NULL DEFAULT 0,
+                flap_count INTEGER NOT NULL DEFAULT 0,
+                lifecycle_state TEXT NOT NULL DEFAULT 'new',
+                last_transition_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (canonical_asset_id) REFERENCES canonical_assets(id)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS asset_lifecycle_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                canonical_asset_id INTEGER NOT NULL,
+                scan_run_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                previous_state TEXT,
+                next_state TEXT,
+                event_reason TEXT,
+                event_payload_json TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (canonical_asset_id) REFERENCES canonical_assets(id)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS asset_subnet_placements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                canonical_asset_id INTEGER NOT NULL,
+                subnet_cidr TEXT NOT NULL,
+                placement_score REAL NOT NULL DEFAULT 0.0,
+                placement_state TEXT NOT NULL DEFAULT 'certain',
+                rationale TEXT,
+                scan_run_id TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (canonical_asset_id, subnet_cidr),
+                FOREIGN KEY (canonical_asset_id) REFERENCES canonical_assets(id)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS asset_subnet_candidates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                canonical_asset_id INTEGER NOT NULL,
+                subnet_cidr TEXT NOT NULL,
+                candidate_score REAL NOT NULL DEFAULT 0.0,
+                candidate_rank INTEGER NOT NULL DEFAULT 1,
+                confidence_state TEXT NOT NULL DEFAULT 'candidate',
+                rationale TEXT,
+                scan_run_id TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (canonical_asset_id) REFERENCES canonical_assets(id)
+            )
+        ''')
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS subnets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -228,6 +344,493 @@ def save_route(route):
         ))
         conn.commit()
 
+def upsert_canonical_asset(canonical_key, preferred_label=None, primary_mac=None, primary_vendor=None, primary_hostname=None, confidence=0.0, conflict_state='resolved'):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO canonical_assets (
+                canonical_key, preferred_label, primary_mac, primary_vendor, primary_hostname, confidence, conflict_state, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(canonical_key) DO UPDATE SET
+                preferred_label = excluded.preferred_label,
+                primary_mac = COALESCE(excluded.primary_mac, canonical_assets.primary_mac),
+                primary_vendor = COALESCE(excluded.primary_vendor, canonical_assets.primary_vendor),
+                primary_hostname = COALESCE(excluded.primary_hostname, canonical_assets.primary_hostname),
+                confidence = MAX(canonical_assets.confidence, excluded.confidence),
+                conflict_state = excluded.conflict_state,
+                updated_at = CURRENT_TIMESTAMP
+        ''', (canonical_key, preferred_label, primary_mac, primary_vendor, primary_hostname, confidence, conflict_state))
+        conn.commit()
+
+def add_asset_alias(canonical_asset_id, alias_type, alias_value):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO asset_aliases (canonical_asset_id, alias_type, alias_value)
+            VALUES (?, ?, ?)
+            ON CONFLICT(canonical_asset_id, alias_type, alias_value) DO NOTHING
+        ''', (canonical_asset_id, alias_type, alias_value))
+        conn.commit()
+
+def add_asset_sighting(canonical_asset_id, sighting_key, ip, mac, hostname, vendor, source, payload_json):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO asset_sightings (
+                canonical_asset_id, sighting_key, ip, mac, hostname, vendor, source, payload_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(sighting_key) DO UPDATE SET
+                canonical_asset_id = excluded.canonical_asset_id,
+                ip = excluded.ip,
+                mac = excluded.mac,
+                hostname = excluded.hostname,
+                vendor = excluded.vendor,
+                source = excluded.source,
+                payload_json = excluded.payload_json
+        ''', (canonical_asset_id, sighting_key, ip, mac, hostname, vendor, source, payload_json))
+        conn.commit()
+
+def add_identity_conflict(sighting_key, conflict_reason, evidence_json):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO identity_conflicts (sighting_key, conflict_reason, evidence_json)
+            VALUES (?, ?, ?)
+            ON CONFLICT(sighting_key) DO UPDATE SET
+                conflict_reason = excluded.conflict_reason,
+                evidence_json = excluded.evidence_json
+        ''', (sighting_key, conflict_reason, evidence_json))
+        conn.commit()
+
+def upsert_asset_temporal_state(canonical_asset_id, first_seen, last_seen, seen_count, flap_count, lifecycle_state, last_transition_at):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO asset_temporal_state (
+                canonical_asset_id, first_seen, last_seen, seen_count, flap_count, lifecycle_state, last_transition_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(canonical_asset_id) DO UPDATE SET
+                first_seen = excluded.first_seen,
+                last_seen = excluded.last_seen,
+                seen_count = excluded.seen_count,
+                flap_count = excluded.flap_count,
+                lifecycle_state = excluded.lifecycle_state,
+                last_transition_at = excluded.last_transition_at,
+                updated_at = CURRENT_TIMESTAMP
+        ''', (canonical_asset_id, first_seen, last_seen, seen_count, flap_count, lifecycle_state, last_transition_at))
+        conn.commit()
+
+def add_asset_lifecycle_event(canonical_asset_id, scan_run_id, event_type, previous_state, next_state, event_reason, event_payload_json):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO asset_lifecycle_events (
+                canonical_asset_id, scan_run_id, event_type, previous_state, next_state, event_reason, event_payload_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (canonical_asset_id, scan_run_id, event_type, previous_state, next_state, event_reason, event_payload_json))
+        conn.commit()
+
+def upsert_asset_subnet_placement(canonical_asset_id, subnet_cidr, placement_score, placement_state, rationale, scan_run_id):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO asset_subnet_placements (
+                canonical_asset_id, subnet_cidr, placement_score, placement_state, rationale, scan_run_id, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(canonical_asset_id, subnet_cidr) DO UPDATE SET
+                placement_score = excluded.placement_score,
+                placement_state = excluded.placement_state,
+                rationale = excluded.rationale,
+                scan_run_id = excluded.scan_run_id,
+                updated_at = CURRENT_TIMESTAMP
+        ''', (canonical_asset_id, subnet_cidr, placement_score, placement_state, rationale, scan_run_id))
+        conn.commit()
+
+def replace_asset_subnet_candidates(canonical_asset_id, candidates, scan_run_id):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM asset_subnet_candidates WHERE canonical_asset_id = ?', (canonical_asset_id,))
+        cursor.executemany('''
+            INSERT INTO asset_subnet_candidates (
+                canonical_asset_id, subnet_cidr, candidate_score, candidate_rank, confidence_state, rationale, scan_run_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', [(*candidate, scan_run_id) for candidate in candidates])
+        conn.commit()
+
+def get_asset_temporal_state():
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT canonical_asset_id, first_seen, last_seen, seen_count, flap_count, lifecycle_state, last_transition_at
+            FROM asset_temporal_state
+        ''')
+        return cursor.fetchall()
+
+def _canonical_sightings(summary):
+    sightings_by_key = {}
+
+    def merge_sighting(key, source, ip, mac, hostname, vendor, payload):
+        normalized_key = str(key or ip or payload.get('target') or payload.get('hostname') or payload.get('sysName') or payload.get('mac') or 'unknown')
+        current = sightings_by_key.get(normalized_key)
+        if current is None:
+            sightings_by_key[normalized_key] = {
+                'source': source,
+                'ip': ip,
+                'mac': mac,
+                'hostname': hostname,
+                'vendor': vendor,
+                'payload': payload,
+            }
+            return
+
+        if not current.get('ip') and ip:
+            current['ip'] = ip
+        if not current.get('mac') and mac:
+            current['mac'] = mac
+        if not current.get('hostname') and hostname:
+            current['hostname'] = hostname
+        if not current.get('vendor') and vendor:
+            current['vendor'] = vendor
+        current['payload'] = payload
+        current['source'] = source if current.get('source') == 'probe' else current['source']
+
+    for dev in summary.get('scan_data', []):
+        if not isinstance(dev, dict):
+            continue
+        merge_sighting(dev.get('ip'), 'icmp', dev.get('ip'), dev.get('mac'), dev.get('hostname'), dev.get('vendor'), dev)
+
+    for host in summary.get('host_data', []):
+        if not isinstance(host, dict):
+            continue
+        merge_sighting(host.get('ip'), 'wmi', host.get('ip'), host.get('mac'), host.get('hostname'), host.get('vendor'), host)
+
+    for snmp in summary.get('snmp_data', []):
+        if not isinstance(snmp, dict):
+            continue
+        merge_sighting(snmp.get('ip'), 'snmp', snmp.get('ip'), snmp.get('mac'), snmp.get('sysName') or snmp.get('hostname'), snmp.get('vendor'), snmp)
+
+    for observation in summary.get('probe_observations', []):
+        if not isinstance(observation, dict):
+            continue
+        merge_sighting(
+            observation.get('ip') or observation.get('target'),
+            str(observation.get('source') or observation.get('service_hint') or observation.get('probe_type') or 'probe'),
+            observation.get('ip') or observation.get('target'),
+            observation.get('mac'),
+            observation.get('hostname') or observation.get('sysName'),
+            observation.get('vendor'),
+            observation,
+        )
+
+    return list(sightings_by_key.values())
+
+
+def _load_canonical_assets():
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT id, canonical_key, preferred_label, primary_mac, primary_vendor, primary_hostname, confidence, conflict_state FROM canonical_assets'
+        )
+        return [
+            {
+                'id': row[0],
+                'canonical_key': row[1],
+                'preferred_label': row[2],
+                'primary_mac': row[3],
+                'primary_vendor': row[4],
+                'primary_hostname': row[5],
+                'confidence': row[6],
+                'conflict_state': row[7],
+            }
+            for row in cursor.fetchall()
+        ]
+
+
+def _load_temporal_state():
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT canonical_asset_id, first_seen, last_seen, seen_count, flap_count, lifecycle_state, last_transition_at FROM asset_temporal_state'
+        )
+        return {
+            int(row[0]): {
+                'canonical_asset_id': int(row[0]),
+                'first_seen': row[1],
+                'last_seen': row[2],
+                'seen_count': int(row[3] or 0),
+                'flap_count': int(row[4] or 0),
+                'lifecycle_state': row[5],
+                'last_transition_at': row[6],
+            }
+            for row in cursor.fetchall()
+        }
+
+
+def _load_latest_asset_sightings():
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT s.canonical_asset_id, s.ip, s.mac, s.hostname, s.vendor
+            FROM asset_sightings s
+            INNER JOIN (
+                SELECT canonical_asset_id, MAX(id) AS max_id
+                FROM asset_sightings
+                WHERE canonical_asset_id IS NOT NULL
+                GROUP BY canonical_asset_id
+            ) latest ON latest.canonical_asset_id = s.canonical_asset_id AND latest.max_id = s.id
+            '''
+        )
+        return {
+            int(row[0]): {
+                'canonical_asset_id': int(row[0]),
+                'ip': row[1],
+                'mac': row[2],
+                'hostname': row[3],
+                'vendor': row[4],
+            }
+            for row in cursor.fetchall()
+        }
+
+
+def _resolve_current_canonical_sightings(summary):
+    current_sightings = []
+    canonical_assets = _load_canonical_assets()
+    existing_by_key = {asset['canonical_key']: asset for asset in canonical_assets}
+
+    for sighting in _canonical_sightings(summary):
+        resolution = resolve_canonical_asset(sighting, canonical_assets)
+        if resolution['state'] != 'merged':
+            continue
+        canonical_key = resolution['canonical_key']
+        canonical_asset = existing_by_key.get(canonical_key)
+        if canonical_asset is None:
+            continue
+        current_sightings.append(
+            {
+                'canonical_asset_id': canonical_asset['id'],
+                'canonical_key': canonical_key,
+                'sighting_key': json.dumps(sighting['payload'], separators=(',', ':'), sort_keys=True),
+                'ip': sighting.get('ip'),
+                'mac': sighting.get('mac'),
+                'hostname': sighting.get('hostname'),
+                'vendor': sighting.get('vendor'),
+                'source': sighting.get('source'),
+            }
+        )
+
+    return current_sightings
+
+
+def update_temporal_state(summary, scan_run_id):
+    current_scan = _resolve_current_canonical_sightings(summary)
+    previous_state = _load_temporal_state()
+    reducer_result = reduce_temporal_state(previous_state, current_scan, scan_run_id=scan_run_id, absent_threshold=1)
+
+    state_by_asset_id = reducer_result['state_by_asset_id']
+    events = reducer_result['events']
+
+    for asset_id, snapshot in state_by_asset_id.items():
+        upsert_asset_temporal_state(
+            asset_id,
+            snapshot['first_seen'],
+            snapshot['last_seen'],
+            snapshot['seen_count'],
+            snapshot['flap_count'],
+            snapshot['lifecycle_state'],
+            snapshot['last_transition_at'],
+        )
+
+    for event in events:
+        add_asset_lifecycle_event(
+            event['canonical_asset_id'],
+            scan_run_id,
+            event['event_type'],
+            event.get('previous_state'),
+            event.get('next_state'),
+            event.get('event_reason'),
+            json.dumps(event.get('event_payload'), separators=(',', ':'), sort_keys=True) if event.get('event_payload') is not None else None,
+        )
+
+    return len(state_by_asset_id)
+
+
+def update_subnet_placement(summary, scan_run_id):
+    canonical_assets = _load_canonical_assets()
+    latest_sightings = _load_latest_asset_sightings()
+    subnets = [subnet for subnet in summary.get('subnets', []) if isinstance(subnet, dict)]
+    context = {
+        'routes': [route for route in summary.get('routes', []) if isinstance(route, dict)],
+        'interfaces': [iface for iface in summary.get('interfaces', []) if isinstance(iface, dict)],
+    }
+
+    processed_assets = 0
+
+    for asset in canonical_assets:
+        sighting = latest_sightings.get(asset['id'], {})
+        candidate_asset = {
+            'canonical_asset_id': asset['id'],
+            'canonical_key': asset['canonical_key'],
+            'ip': sighting.get('ip'),
+            'hostname': sighting.get('hostname') or asset.get('preferred_label') or asset.get('primary_hostname'),
+            'vendor': sighting.get('vendor') or asset.get('primary_vendor'),
+        }
+
+        resolution = resolve_subnet_placement(candidate_asset, subnets, context)
+        if resolution['state'] == 'unplaced':
+            continue
+
+        primary = resolution.get('primary') or (resolution.get('candidates') or [None])[0]
+        if primary:
+            upsert_asset_subnet_placement(
+                asset['id'],
+                primary['subnet_cidr'],
+                primary['score'],
+                resolution['state'],
+                primary.get('rationale'),
+                scan_run_id,
+            )
+
+        candidate_rows = []
+        for rank, candidate in enumerate(resolution.get('candidates', []), start=1):
+            candidate_rows.append(
+                (
+                    asset['id'],
+                    candidate['subnet_cidr'],
+                    candidate['score'],
+                    rank,
+                    resolution['state'],
+                    candidate.get('rationale'),
+                )
+            )
+
+        if candidate_rows:
+            replace_asset_subnet_candidates(asset['id'], candidate_rows, scan_run_id)
+
+        processed_assets += 1
+
+    return processed_assets
+
+
+def ingest_canonical_assets(summary):
+    sightings = _canonical_sightings(summary)
+    if not sightings:
+        return 0
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT canonical_key, preferred_label, primary_mac, primary_vendor, primary_hostname, confidence, conflict_state FROM canonical_assets'
+        )
+        existing_assets = [
+            {
+                'canonical_key': row[0],
+                'preferred_label': row[1],
+                'primary_mac': row[2],
+                'primary_vendor': row[3],
+                'primary_hostname': row[4],
+                'confidence': row[5],
+                'conflict_state': row[6],
+            }
+            for row in cursor.fetchall()
+        ]
+
+    existing_by_key = {asset['canonical_key']: asset for asset in existing_assets}
+
+    for sighting in sightings:
+        sighting_key = json.dumps(sighting['payload'], separators=(',', ':'), sort_keys=True)
+        resolution = resolve_canonical_asset(sighting, existing_assets)
+
+        if resolution['state'] == 'conflict':
+            add_identity_conflict(sighting_key, resolution['conflict_reason'], json.dumps(sighting['payload'], separators=(',', ':'), sort_keys=True))
+            add_asset_sighting(None, sighting_key, sighting.get('ip'), sighting.get('mac'), sighting.get('hostname'), sighting.get('vendor'), sighting.get('source'), json.dumps(sighting['payload'], separators=(',', ':'), sort_keys=True))
+            continue
+
+        canonical_key = resolution['canonical_key']
+        matched_asset = existing_by_key.get(canonical_key, {})
+        preferred_label = matched_asset.get('preferred_label') or sighting.get('hostname') or sighting.get('ip')
+        primary_mac = matched_asset.get('primary_mac') or sighting.get('mac')
+        primary_vendor = matched_asset.get('primary_vendor') or sighting.get('vendor')
+        primary_hostname = matched_asset.get('primary_hostname') or sighting.get('hostname')
+
+        upsert_canonical_asset(
+            canonical_key,
+            preferred_label=preferred_label,
+            primary_mac=primary_mac,
+            primary_vendor=primary_vendor,
+            primary_hostname=primary_hostname,
+            confidence=resolution['confidence'],
+            conflict_state='resolved',
+        )
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT id FROM canonical_assets WHERE canonical_key = ?', (canonical_key,))
+            canonical_asset_id = cursor.fetchone()[0]
+
+        add_asset_sighting(
+            canonical_asset_id,
+            sighting_key,
+            sighting.get('ip'),
+            sighting.get('mac'),
+            sighting.get('hostname'),
+            sighting.get('vendor'),
+            sighting.get('source'),
+            json.dumps(sighting['payload'], separators=(',', ':'), sort_keys=True),
+        )
+        for alias_type, alias_value in (
+            ('mac', sighting.get('mac')),
+            ('hostname', sighting.get('hostname')),
+            ('vendor', sighting.get('vendor')),
+        ):
+            if alias_value:
+                add_asset_alias(canonical_asset_id, alias_type, alias_value)
+
+        existing_by_key[canonical_key] = {
+            'canonical_key': canonical_key,
+            'preferred_label': preferred_label,
+            'primary_mac': primary_mac,
+            'primary_vendor': primary_vendor,
+            'primary_hostname': primary_hostname,
+            'confidence': resolution['confidence'],
+            'conflict_state': 'resolved',
+        }
+        if not any(asset['canonical_key'] == canonical_key for asset in existing_assets):
+            existing_assets.append(existing_by_key[canonical_key])
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM devices')
+        cursor.execute('SELECT id, canonical_key, preferred_label, primary_mac, primary_hostname, primary_vendor FROM canonical_assets')
+        rows = cursor.fetchall()
+        devices_tuples = []
+        for canonical_asset_id, canonical_key, preferred_label, primary_mac, primary_hostname, primary_vendor in rows:
+            cursor.execute(
+                'SELECT ip FROM asset_sightings WHERE canonical_asset_id = ? AND ip IS NOT NULL ORDER BY id DESC LIMIT 1',
+                (canonical_asset_id,),
+            )
+            sighting_row = cursor.fetchone()
+            ip = sighting_row[0] if sighting_row else canonical_key
+            devices_tuples.append(
+                (
+                    ip,
+                    primary_mac,
+                    preferred_label or primary_hostname or ip,
+                    'Unknown',
+                    primary_vendor,
+                )
+            )
+        cursor.executemany(
+            '''
+            INSERT OR IGNORE INTO devices (ip, mac, hostname, os, vendor)
+            VALUES (?, ?, ?, ?, ?)
+            ''',
+            devices_tuples,
+        )
+        conn.commit()
+
+    return len(sightings)
+
 def clear_interfaces():
     """Clears out old network adapters to start a fresh scan."""
     with get_db_connection() as conn:
@@ -340,58 +943,21 @@ def ingest_live_data(summary):
             'resolved_state_updated': False,
         }
 
-    devices_map = {}
-    
-    # base network scan (ping sweep & arp)
-    for dev in summary.get('scan_data', []):
-        devices_map[dev['ip']] = {
-            "ip": dev['ip'],
-            "mac": dev.get('mac', 'Unknown'),
-            "hostname": dev.get('hostname', 'Active-Host'),
-            "os": dev.get('os', 'Unknown'),
-            "vendor": dev.get('vendor', 'Detected-Live')
-        }
-        
-    # add Windows WMI/CIM enumeration details
-    for host in summary.get('host_data', []):
-        ip = host['ip']
-        if ip in devices_map:
-            devices_map[ip]["hostname"] = host.get("hostname", devices_map[ip]["hostname"])
-            devices_map[ip]["os"] = host.get("os", devices_map[ip]["os"])
-            devices_map[ip]["vendor"] = host.get("vendor", devices_map[ip]["vendor"])
-            
-    # add generic SNMP appliance details
-    for snmp in summary.get('snmp_data', []):
-        ip = snmp['ip']
-        if ip in devices_map:
-            devices_map[ip]["hostname"] = snmp.get("sysName", devices_map[ip]["hostname"])
-            devices_map[ip]["os"] = snmp.get("sysDescr", devices_map[ip]["os"])
-            # if we found a vendor via SNMP (rare but possible), update it
-            if 'vendor' in snmp:
-                devices_map[ip]["vendor"] = snmp['vendor']
-            
-    # insert unified data into storage
-    devices_tuples = [
-        (d["ip"], d["mac"], d["hostname"], d["os"], d["vendor"])
-        for d in devices_map.values()
-    ]
+    resolved_host_count = ingest_canonical_assets(summary)
+    temporal_rows_updated = update_temporal_state(summary, scan_run_id)
+    placement_rows_updated = update_subnet_placement(summary, scan_run_id)
     
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        
-        cursor.execute('DELETE FROM devices')
-        
-        cursor.executemany('''
-            INSERT OR IGNORE INTO devices (ip, mac, hostname, os, vendor)
-            VALUES (?, ?, ?, ?, ?)
-        ''', devices_tuples)
         conn.commit()
 
     return {
         'scan_run_id': scan_run_id,
         'observation_count': observation_count,
-        'resolved_host_count': len(devices_tuples),
+        'resolved_host_count': resolved_host_count,
         'resolved_state_updated': True,
+        'temporal_rows_updated': temporal_rows_updated,
+        'placement_rows_updated': placement_rows_updated,
     }
 
 def get_devices_sorted_by_ip():
