@@ -6,6 +6,7 @@ import time
 from contextlib import contextmanager
 
 from .asset_identity import resolve_canonical_asset
+from .temporal_state import reduce_temporal_state
 
 DB_PATH = "data/netdocit.sqlite"
 
@@ -86,6 +87,35 @@ def init_db():
                 conflict_reason TEXT NOT NULL,
                 evidence_json TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS asset_temporal_state (
+                canonical_asset_id INTEGER PRIMARY KEY,
+                first_seen DATETIME NOT NULL,
+                last_seen DATETIME NOT NULL,
+                seen_count INTEGER NOT NULL DEFAULT 0,
+                flap_count INTEGER NOT NULL DEFAULT 0,
+                lifecycle_state TEXT NOT NULL DEFAULT 'new',
+                last_transition_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (canonical_asset_id) REFERENCES canonical_assets(id)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS asset_lifecycle_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                canonical_asset_id INTEGER NOT NULL,
+                scan_run_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                previous_state TEXT,
+                next_state TEXT,
+                event_reason TEXT,
+                event_payload_json TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (canonical_asset_id) REFERENCES canonical_assets(id)
             )
         ''')
         cursor.execute('''
@@ -340,6 +370,43 @@ def add_identity_conflict(sighting_key, conflict_reason, evidence_json):
         ''', (sighting_key, conflict_reason, evidence_json))
         conn.commit()
 
+def upsert_asset_temporal_state(canonical_asset_id, first_seen, last_seen, seen_count, flap_count, lifecycle_state, last_transition_at):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO asset_temporal_state (
+                canonical_asset_id, first_seen, last_seen, seen_count, flap_count, lifecycle_state, last_transition_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(canonical_asset_id) DO UPDATE SET
+                first_seen = excluded.first_seen,
+                last_seen = excluded.last_seen,
+                seen_count = excluded.seen_count,
+                flap_count = excluded.flap_count,
+                lifecycle_state = excluded.lifecycle_state,
+                last_transition_at = excluded.last_transition_at,
+                updated_at = CURRENT_TIMESTAMP
+        ''', (canonical_asset_id, first_seen, last_seen, seen_count, flap_count, lifecycle_state, last_transition_at))
+        conn.commit()
+
+def add_asset_lifecycle_event(canonical_asset_id, scan_run_id, event_type, previous_state, next_state, event_reason, event_payload_json):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO asset_lifecycle_events (
+                canonical_asset_id, scan_run_id, event_type, previous_state, next_state, event_reason, event_payload_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (canonical_asset_id, scan_run_id, event_type, previous_state, next_state, event_reason, event_payload_json))
+        conn.commit()
+
+def get_asset_temporal_state():
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT canonical_asset_id, first_seen, last_seen, seen_count, flap_count, lifecycle_state, last_transition_at
+            FROM asset_temporal_state
+        ''')
+        return cursor.fetchall()
+
 def _canonical_sightings(summary):
     sightings_by_key = {}
 
@@ -397,6 +464,109 @@ def _canonical_sightings(summary):
         )
 
     return list(sightings_by_key.values())
+
+
+def _load_canonical_assets():
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT id, canonical_key, preferred_label, primary_mac, primary_vendor, primary_hostname, confidence, conflict_state FROM canonical_assets'
+        )
+        return [
+            {
+                'id': row[0],
+                'canonical_key': row[1],
+                'preferred_label': row[2],
+                'primary_mac': row[3],
+                'primary_vendor': row[4],
+                'primary_hostname': row[5],
+                'confidence': row[6],
+                'conflict_state': row[7],
+            }
+            for row in cursor.fetchall()
+        ]
+
+
+def _load_temporal_state():
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT canonical_asset_id, first_seen, last_seen, seen_count, flap_count, lifecycle_state, last_transition_at FROM asset_temporal_state'
+        )
+        return {
+            int(row[0]): {
+                'canonical_asset_id': int(row[0]),
+                'first_seen': row[1],
+                'last_seen': row[2],
+                'seen_count': int(row[3] or 0),
+                'flap_count': int(row[4] or 0),
+                'lifecycle_state': row[5],
+                'last_transition_at': row[6],
+            }
+            for row in cursor.fetchall()
+        }
+
+
+def _resolve_current_canonical_sightings(summary):
+    current_sightings = []
+    canonical_assets = _load_canonical_assets()
+    existing_by_key = {asset['canonical_key']: asset for asset in canonical_assets}
+
+    for sighting in _canonical_sightings(summary):
+        resolution = resolve_canonical_asset(sighting, canonical_assets)
+        if resolution['state'] != 'merged':
+            continue
+        canonical_key = resolution['canonical_key']
+        canonical_asset = existing_by_key.get(canonical_key)
+        if canonical_asset is None:
+            continue
+        current_sightings.append(
+            {
+                'canonical_asset_id': canonical_asset['id'],
+                'canonical_key': canonical_key,
+                'sighting_key': json.dumps(sighting['payload'], separators=(',', ':'), sort_keys=True),
+                'ip': sighting.get('ip'),
+                'mac': sighting.get('mac'),
+                'hostname': sighting.get('hostname'),
+                'vendor': sighting.get('vendor'),
+                'source': sighting.get('source'),
+            }
+        )
+
+    return current_sightings
+
+
+def update_temporal_state(summary, scan_run_id):
+    current_scan = _resolve_current_canonical_sightings(summary)
+    previous_state = _load_temporal_state()
+    reducer_result = reduce_temporal_state(previous_state, current_scan, scan_run_id=scan_run_id, absent_threshold=1)
+
+    state_by_asset_id = reducer_result['state_by_asset_id']
+    events = reducer_result['events']
+
+    for asset_id, snapshot in state_by_asset_id.items():
+        upsert_asset_temporal_state(
+            asset_id,
+            snapshot['first_seen'],
+            snapshot['last_seen'],
+            snapshot['seen_count'],
+            snapshot['flap_count'],
+            snapshot['lifecycle_state'],
+            snapshot['last_transition_at'],
+        )
+
+    for event in events:
+        add_asset_lifecycle_event(
+            event['canonical_asset_id'],
+            scan_run_id,
+            event['event_type'],
+            event.get('previous_state'),
+            event.get('next_state'),
+            event.get('event_reason'),
+            json.dumps(event.get('event_payload'), separators=(',', ':'), sort_keys=True) if event.get('event_payload') is not None else None,
+        )
+
+    return len(state_by_asset_id)
 
 
 def ingest_canonical_assets(summary):
@@ -631,6 +801,7 @@ def ingest_live_data(summary):
         }
 
     resolved_host_count = ingest_canonical_assets(summary)
+    temporal_rows_updated = update_temporal_state(summary, scan_run_id)
     
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -641,6 +812,7 @@ def ingest_live_data(summary):
         'observation_count': observation_count,
         'resolved_host_count': resolved_host_count,
         'resolved_state_updated': True,
+        'temporal_rows_updated': temporal_rows_updated,
     }
 
 def get_devices_sorted_by_ip():
