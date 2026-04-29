@@ -7,6 +7,7 @@ from contextlib import contextmanager
 
 from .asset_identity import resolve_canonical_asset
 from .temporal_state import reduce_temporal_state
+from .subnet_placement import resolve_subnet_placement
 
 DB_PATH = "data/netdocit.sqlite"
 
@@ -114,6 +115,37 @@ def init_db():
                 next_state TEXT,
                 event_reason TEXT,
                 event_payload_json TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (canonical_asset_id) REFERENCES canonical_assets(id)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS asset_subnet_placements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                canonical_asset_id INTEGER NOT NULL,
+                subnet_cidr TEXT NOT NULL,
+                placement_score REAL NOT NULL DEFAULT 0.0,
+                placement_state TEXT NOT NULL DEFAULT 'certain',
+                rationale TEXT,
+                scan_run_id TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (canonical_asset_id, subnet_cidr),
+                FOREIGN KEY (canonical_asset_id) REFERENCES canonical_assets(id)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS asset_subnet_candidates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                canonical_asset_id INTEGER NOT NULL,
+                subnet_cidr TEXT NOT NULL,
+                candidate_score REAL NOT NULL DEFAULT 0.0,
+                candidate_rank INTEGER NOT NULL DEFAULT 1,
+                confidence_state TEXT NOT NULL DEFAULT 'candidate',
+                rationale TEXT,
+                scan_run_id TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (canonical_asset_id) REFERENCES canonical_assets(id)
             )
@@ -398,6 +430,33 @@ def add_asset_lifecycle_event(canonical_asset_id, scan_run_id, event_type, previ
         ''', (canonical_asset_id, scan_run_id, event_type, previous_state, next_state, event_reason, event_payload_json))
         conn.commit()
 
+def upsert_asset_subnet_placement(canonical_asset_id, subnet_cidr, placement_score, placement_state, rationale, scan_run_id):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO asset_subnet_placements (
+                canonical_asset_id, subnet_cidr, placement_score, placement_state, rationale, scan_run_id, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(canonical_asset_id, subnet_cidr) DO UPDATE SET
+                placement_score = excluded.placement_score,
+                placement_state = excluded.placement_state,
+                rationale = excluded.rationale,
+                scan_run_id = excluded.scan_run_id,
+                updated_at = CURRENT_TIMESTAMP
+        ''', (canonical_asset_id, subnet_cidr, placement_score, placement_state, rationale, scan_run_id))
+        conn.commit()
+
+def replace_asset_subnet_candidates(canonical_asset_id, candidates, scan_run_id):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM asset_subnet_candidates WHERE canonical_asset_id = ?', (canonical_asset_id,))
+        cursor.executemany('''
+            INSERT INTO asset_subnet_candidates (
+                canonical_asset_id, subnet_cidr, candidate_score, candidate_rank, confidence_state, rationale, scan_run_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', [(*candidate, scan_run_id) for candidate in candidates])
+        conn.commit()
+
 def get_asset_temporal_state():
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -507,6 +566,33 @@ def _load_temporal_state():
         }
 
 
+def _load_latest_asset_sightings():
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT s.canonical_asset_id, s.ip, s.mac, s.hostname, s.vendor
+            FROM asset_sightings s
+            INNER JOIN (
+                SELECT canonical_asset_id, MAX(id) AS max_id
+                FROM asset_sightings
+                WHERE canonical_asset_id IS NOT NULL
+                GROUP BY canonical_asset_id
+            ) latest ON latest.canonical_asset_id = s.canonical_asset_id AND latest.max_id = s.id
+            '''
+        )
+        return {
+            int(row[0]): {
+                'canonical_asset_id': int(row[0]),
+                'ip': row[1],
+                'mac': row[2],
+                'hostname': row[3],
+                'vendor': row[4],
+            }
+            for row in cursor.fetchall()
+        }
+
+
 def _resolve_current_canonical_sightings(summary):
     current_sightings = []
     canonical_assets = _load_canonical_assets()
@@ -567,6 +653,63 @@ def update_temporal_state(summary, scan_run_id):
         )
 
     return len(state_by_asset_id)
+
+
+def update_subnet_placement(summary, scan_run_id):
+    canonical_assets = _load_canonical_assets()
+    latest_sightings = _load_latest_asset_sightings()
+    subnets = [subnet for subnet in summary.get('subnets', []) if isinstance(subnet, dict)]
+    context = {
+        'routes': [route for route in summary.get('routes', []) if isinstance(route, dict)],
+        'interfaces': [iface for iface in summary.get('interfaces', []) if isinstance(iface, dict)],
+    }
+
+    processed_assets = 0
+
+    for asset in canonical_assets:
+        sighting = latest_sightings.get(asset['id'], {})
+        candidate_asset = {
+            'canonical_asset_id': asset['id'],
+            'canonical_key': asset['canonical_key'],
+            'ip': sighting.get('ip'),
+            'hostname': sighting.get('hostname') or asset.get('preferred_label') or asset.get('primary_hostname'),
+            'vendor': sighting.get('vendor') or asset.get('primary_vendor'),
+        }
+
+        resolution = resolve_subnet_placement(candidate_asset, subnets, context)
+        if resolution['state'] == 'unplaced':
+            continue
+
+        primary = resolution.get('primary') or (resolution.get('candidates') or [None])[0]
+        if primary:
+            upsert_asset_subnet_placement(
+                asset['id'],
+                primary['subnet_cidr'],
+                primary['score'],
+                resolution['state'],
+                primary.get('rationale'),
+                scan_run_id,
+            )
+
+        candidate_rows = []
+        for rank, candidate in enumerate(resolution.get('candidates', []), start=1):
+            candidate_rows.append(
+                (
+                    asset['id'],
+                    candidate['subnet_cidr'],
+                    candidate['score'],
+                    rank,
+                    resolution['state'],
+                    candidate.get('rationale'),
+                )
+            )
+
+        if candidate_rows:
+            replace_asset_subnet_candidates(asset['id'], candidate_rows, scan_run_id)
+
+        processed_assets += 1
+
+    return processed_assets
 
 
 def ingest_canonical_assets(summary):
@@ -802,6 +945,7 @@ def ingest_live_data(summary):
 
     resolved_host_count = ingest_canonical_assets(summary)
     temporal_rows_updated = update_temporal_state(summary, scan_run_id)
+    placement_rows_updated = update_subnet_placement(summary, scan_run_id)
     
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -813,6 +957,7 @@ def ingest_live_data(summary):
         'resolved_host_count': resolved_host_count,
         'resolved_state_updated': True,
         'temporal_rows_updated': temporal_rows_updated,
+        'placement_rows_updated': placement_rows_updated,
     }
 
 def get_devices_sorted_by_ip():
