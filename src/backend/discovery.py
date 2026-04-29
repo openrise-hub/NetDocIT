@@ -37,9 +37,10 @@ def get_subnets(routes):
             continue
     return sorted(list(subnets))
 
-from .config_parser import load_config
+from .config_parser import load_config, load_scope_policy
 from .database import init_db, save_interface, clear_interfaces, save_route, clear_routes, get_last_scans, get_all_subnets, add_log_entry
 from .processor import process_discovered_subnets, get_missing_subnets, get_priority_subnets
+from .safety_policy import evaluate_scope_policy, policy_to_summary, decision_to_summary
 try:
     from .snmp_engine import scan_appliances  # type: ignore
 except Exception:
@@ -163,6 +164,9 @@ def discover_all(
         timeout_was_sanitized = True
         script_timeout_seconds = 1
 
+    scope_policy = load_scope_policy(load_config())
+    probe_metrics = AdaptiveProbeScheduler().run([])["metrics"]
+
     # unified entry point for environmental mapping
     log("Initializing local interface database...")
     clear_interfaces()
@@ -195,6 +199,56 @@ def discover_all(
     subnets = get_subnets(routes)
     scan_subnet_count = len(subnets)
     log(f"mapping {len(subnets)} subnets: {', '.join(subnets)}")
+
+    preflight_decision = evaluate_scope_policy(
+        candidate_subnets=subnets,
+        candidate_hosts=[],
+        policy=scope_policy,
+    )
+    if not preflight_decision.allowed:
+        run_finished_monotonic = time.monotonic()
+        run_duration_seconds = run_finished_monotonic - run_started_monotonic
+        summary = {
+            "interfaces": interfaces,
+            "routes": routes,
+            "subnets": [],
+            "new": [],
+            "missing": [],
+            "priorities": {"high": [], "medium": [], "low": []},
+            "gateways": [r['gateway'] for r in routes if r.get('network') == "0.0.0.0"],
+            "scan_data": [],
+            "scan_error": False,
+            "scan_error_message": None,
+            "scan_subnet_count": scan_subnet_count,
+            "responsive_endpoint_count": 0,
+            "host_enum_target_count": 0,
+            "snmp_target_count": 0,
+            "host_enum_result_count": 0,
+            "snmp_result_count": 0,
+            "host_data": [],
+            "snmp_data": [],
+            "scan_profile": normalized_profile,
+            "script_timeout_seconds": script_timeout_seconds,
+            "script_timeout_source": timeout_source,
+            "script_timeout_was_sanitized": timeout_was_sanitized,
+            "timeout_policy": {
+                "default_seconds": DEFAULT_SCRIPT_TIMEOUT_SECONDS,
+                "max_seconds": MAX_SCRIPT_TIMEOUT_SECONDS,
+            },
+            "run_started_monotonic": run_started_monotonic,
+            "run_finished_monotonic": run_finished_monotonic,
+            "run_duration_seconds": run_duration_seconds,
+            "scan_timeout_exceeded": False,
+            "scan_completion_state": "blocked",
+            "scan_completion_reason": preflight_decision.reason_code,
+            "scope_policy": policy_to_summary(scope_policy),
+            "scope_policy_decision": decision_to_summary(preflight_decision),
+            "probe_metrics": probe_metrics,
+        }
+        summary["host_data_count"] = 0
+        summary["snmp_data_count"] = 0
+        summary["service_identity"] = build_service_identity_summary(summary)
+        return summary
     
     # execute live scanning cores
     log("starting icmp ping sweep across subnets...")
@@ -248,6 +302,58 @@ def discover_all(
     snmp_target_count = 0
     host_enum_result_count = 0
     snmp_result_count = 0
+    if not scan_error:
+        post_scan_hosts = [str(dev['ip']) for dev in _as_dict_list(scan_results) if 'ip' in dev]
+        host_check_decision = evaluate_scope_policy(
+            candidate_subnets=subnets,
+            candidate_hosts=post_scan_hosts,
+            policy=scope_policy,
+        )
+        if not host_check_decision.allowed:
+            run_finished_monotonic = time.monotonic()
+            run_duration_seconds = run_finished_monotonic - run_started_monotonic
+            readiness = report_readiness(interfaces, routes, subnets)
+            summary = {
+                "interfaces": interfaces,
+                "routes": routes,
+                "subnets": readiness["subnets"],
+                "new": readiness["new"],
+                "missing": readiness["missing"],
+                "priorities": readiness["priorities"],
+                "gateways": readiness["gateways"],
+                "scan_data": _as_dict_list(scan_results),
+                "scan_error": False,
+                "scan_error_message": None,
+                "scan_subnet_count": scan_subnet_count,
+                "responsive_endpoint_count": responsive_endpoint_count,
+                "host_enum_target_count": 0,
+                "snmp_target_count": 0,
+                "host_enum_result_count": 0,
+                "snmp_result_count": 0,
+                "host_data": [],
+                "snmp_data": [],
+                "scan_profile": normalized_profile,
+                "script_timeout_seconds": script_timeout_seconds,
+                "script_timeout_source": timeout_source,
+                "script_timeout_was_sanitized": timeout_was_sanitized,
+                "timeout_policy": {
+                    "default_seconds": DEFAULT_SCRIPT_TIMEOUT_SECONDS,
+                    "max_seconds": MAX_SCRIPT_TIMEOUT_SECONDS,
+                },
+                "run_started_monotonic": run_started_monotonic,
+                "run_finished_monotonic": run_finished_monotonic,
+                "run_duration_seconds": run_duration_seconds,
+                "scan_timeout_exceeded": False,
+                "scan_completion_state": "blocked",
+                "scan_completion_reason": host_check_decision.reason_code,
+                "scope_policy": policy_to_summary(scope_policy),
+                "scope_policy_decision": decision_to_summary(host_check_decision),
+                "probe_metrics": probe_metrics,
+            }
+            summary["host_data_count"] = 0
+            summary["snmp_data_count"] = 0
+            summary["service_identity"] = build_service_identity_summary(summary)
+            return summary
     if found_ips:
         host_enum_target_count = len(found_ips)
         snmp_target_count = len(found_ips)
@@ -334,6 +440,8 @@ def discover_all(
         "scan_timeout_exceeded": scan_timeout_exceeded,
         "scan_completion_state": scan_completion_state,
         "scan_completion_reason": scan_completion_reason,
+        "scope_policy": policy_to_summary(scope_policy),
+        "scope_policy_decision": decision_to_summary(preflight_decision),
         "probe_metrics": probe_metrics,
     }
 

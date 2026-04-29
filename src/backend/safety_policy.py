@@ -58,3 +58,24 @@ def evaluate_scope_policy(
         return ScopePolicyDecision(False, "policy_host_cap_exceeded", violations, _effective_limits(policy))
 
     return ScopePolicyDecision(True, None, [], _effective_limits(policy))
+
+
+def policy_to_summary(policy: ScopePolicy) -> dict[str, object]:
+    return {
+        "allow_subnets": sorted(policy.allow_subnets),
+        "deny_subnets": sorted(policy.deny_subnets),
+        "allow_hosts": sorted(policy.allow_hosts),
+        "deny_hosts": sorted(policy.deny_hosts),
+        "max_hosts": policy.max_hosts,
+        "max_packets_per_second": policy.max_packets_per_second,
+        "max_concurrency": policy.max_concurrency,
+    }
+
+
+def decision_to_summary(decision: ScopePolicyDecision) -> dict[str, object]:
+    return {
+        "allowed": decision.allowed,
+        "reason_code": decision.reason_code,
+        "violations": list(decision.violations),
+        "effective_limits": dict(decision.effective_limits),
+    }
