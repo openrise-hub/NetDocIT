@@ -58,6 +58,14 @@ def run_scan_with_probes(targets, probe_impl, max_workers=4):
     return runner.run(targets, probe_impl)
 from .vendor_lookup import resolve_vendor
 from .protocol_depth import build_service_identity_summary
+from .telemetry import make_provenance
+import importlib.metadata as _imd
+
+_COLLECTOR_NAME = "netdocit"
+try:
+    _COLLECTOR_VERSION = _imd.version(_COLLECTOR_NAME)
+except Exception:
+    _COLLECTOR_VERSION = "dev"
 
 SUPPORTED_SCAN_PROFILES = {"safe", "balanced", "aggressive"}
 DEFAULT_SCRIPT_TIMEOUT_SECONDS = 60
@@ -288,6 +296,24 @@ def discover_all(
         summary["host_data_count"] = 0
         summary["snmp_data_count"] = 0
         summary["service_identity"] = build_service_identity_summary(summary)
+        # Attach provenance metadata
+        try:
+            summary["provenance"] = make_provenance(
+                collector_name=_COLLECTOR_NAME,
+                collector_version=_COLLECTOR_VERSION,
+                module="src.backend.discovery",
+                function_name="discover_all",
+                config_snapshot={
+                    "profile": normalized_profile,
+                    "script_timeout_seconds": script_timeout_seconds,
+                    "script_timeout_source": timeout_source,
+                },
+                credential_audit=credential_audit,
+                evidence=[],
+                explainability={"summary": "preflight blocked by scope policy"},
+            )
+        except Exception:
+            pass
         return summary
     
     # execute live scanning cores
@@ -394,6 +420,24 @@ def discover_all(
         summary["snmp_data_count"] = 0
         summary["service_identity"] = build_service_identity_summary(summary)
         persist_log("WARNING", f"Discovery stopped by safety profile: {safety_abort_reason}", "Scanner")
+        # Attach provenance metadata
+        try:
+            summary["provenance"] = make_provenance(
+                collector_name=_COLLECTOR_NAME,
+                collector_version=_COLLECTOR_VERSION,
+                module="src.backend.discovery",
+                function_name="discover_all",
+                config_snapshot={
+                    "profile": normalized_profile,
+                    "script_timeout_seconds": script_timeout_seconds,
+                    "script_timeout_source": timeout_source,
+                },
+                credential_audit=credential_audit,
+                evidence=[],
+                explainability={"summary": "stopped by safety profile"},
+            )
+        except Exception:
+            pass
         return summary
 
     host_details = []
@@ -457,6 +501,24 @@ def discover_all(
             summary["snmp_data_count"] = 0
             summary["service_identity"] = build_service_identity_summary(summary)
             persist_log("WARNING", f"Discovery stopped by scope policy: {host_check_decision.reason_code}", "Scanner")
+            # Attach provenance metadata
+            try:
+                summary["provenance"] = make_provenance(
+                    collector_name=_COLLECTOR_NAME,
+                    collector_version=_COLLECTOR_VERSION,
+                    module="src.backend.discovery",
+                    function_name="discover_all",
+                    config_snapshot={
+                        "profile": normalized_profile,
+                        "script_timeout_seconds": script_timeout_seconds,
+                        "script_timeout_source": timeout_source,
+                    },
+                    credential_audit=credential_audit,
+                    evidence=[],
+                    explainability={"summary": "stopped by host scope policy"},
+                )
+            except Exception:
+                pass
             return summary
 
     if found_ips and not sentinel_triggered and not scan_error:
@@ -558,6 +620,25 @@ def discover_all(
     summary["host_data_count"] = len(_as_dict_list(summary["host_data"]))
     summary["snmp_data_count"] = len(_as_dict_list(summary["snmp_data"]))
     summary["service_identity"] = build_service_identity_summary(summary)
+
+    # Attach provenance metadata for completed run
+    try:
+        summary["provenance"] = make_provenance(
+            collector_name=_COLLECTOR_NAME,
+            collector_version=_COLLECTOR_VERSION,
+            module="src.backend.discovery",
+            function_name="discover_all",
+            config_snapshot={
+                "profile": normalized_profile,
+                "script_timeout_seconds": script_timeout_seconds,
+                "script_timeout_source": timeout_source,
+            },
+            credential_audit=credential_audit,
+            evidence=summary.get("scan_data", []),
+            explainability={"summary": "completed"},
+        )
+    except Exception:
+        pass
 
     if scan_timeout_exceeded:
         timeout_message = (

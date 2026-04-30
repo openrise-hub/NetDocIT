@@ -1,4 +1,7 @@
-import pysnmp.hlapi as hlapi  # pyright: ignore[reportMissingImports]
+try:
+    import pysnmp.hlapi as hlapi  # pyright: ignore[reportMissingImports]
+except Exception:
+    hlapi = None
 import json
 import os
 from typing import Any, cast
@@ -40,7 +43,20 @@ def query_snmp(ip, community='public'):
                 results[key] = str(varBinds[0][1])
         except Exception:
             continue
-            
+
+    # build a basic explainability summary if we have sysDescr
+    if 'sysDescr' in results:
+        descr = results.get('sysDescr', '')
+        why = f"SNMP sysDescr contains: {descr[:80]}" if descr else "sysDescr present"
+        how = f"snmp_engine.query_snmp(community={community})->oids(sysDescr,sysName)"
+        confidence = 0.5
+        lowerv = descr.lower()
+        if any(k in lowerv for k in ('cisco', 'juniper', 'arista', 'huawei', 'mikrotik')):
+            confidence = 0.9
+        elif len(descr) > 10:
+            confidence = 0.75
+        results['explainability'] = {'why': why, 'how': how, 'confidence': confidence}
+
     return results if 'sysDescr' in results else None
 
 def scan_appliances(ips, communities=None):
@@ -59,6 +75,28 @@ def scan_appliances(ips, communities=None):
         for community in communities:
             res = query_snmp(ip, community)
             if res:
+                # ensure we do not expose community strings in returned payloads
+                if 'community' in res:
+                    del res['community']
+                # if the query didn't build explainability, synthesize a minimal one here
+                if 'explainability' not in res:
+                    descr = res.get('sysDescr', '')
+                    why = f"SNMP sysDescr contains: {descr[:80]}" if descr else "sysDescr present"
+                    how = f"snmp_engine.query_snmp(community={community})"
+                    confidence = 0.5
+                    lowerv = (descr or '').lower()
+                    if any(k in lowerv for k in ('cisco', 'juniper', 'arista', 'huawei', 'mikrotik')):
+                        confidence = 0.9
+                    elif len(descr or '') > 10:
+                        confidence = 0.75
+                    res['explainability'] = {'why': why, 'how': how, 'confidence': confidence}
+                # normalize explainability shape
+                expl = res.get('explainability') or {}
+                res['explainability'] = {
+                    'why': expl.get('why'),
+                    'how': expl.get('how'),
+                    'confidence': expl.get('confidence', 0.0),
+                }
                 found.append(res)
                 break # stop trying other communities for this device
     return found

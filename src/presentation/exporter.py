@@ -1,4 +1,5 @@
 import os
+import json
 from datetime import datetime
 
 class MarkdownGenerator:
@@ -31,7 +32,7 @@ class MarkdownGenerator:
         with open(filename, "w", encoding="utf-8") as f:
             f.write("\n".join(self.content))
 
-    def save_html(self, subnet_count, dev_stats, devices, filename="inventory.html"):
+    def save_html(self, subnet_count, dev_stats, devices, filename="inventory.html", provenance=None):
         from jinja2 import Environment, FileSystemLoader
         
         # setup jinja2 to load the template folder
@@ -40,12 +41,19 @@ class MarkdownGenerator:
         template = env.get_template('inventory.html')
         
         # render the data into the dashboard
+        # provenance may be provided in the caller; store on the generator instance
+        self.provenance = provenance
+        provenance_json = "{}"
+        if provenance is not None:
+            provenance_json = json.dumps(provenance, ensure_ascii=False, separators=(",", ":"))
+
         output = template.render(
             timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             subnet_count=subnet_count,
             windows_count=dev_stats['windows'],
             appliance_count=dev_stats['appliances'],
-            devices=devices
+            devices=devices,
+            provenance_json=provenance_json,
         )
         
         with open(filename, "w", encoding="utf-8") as f:
