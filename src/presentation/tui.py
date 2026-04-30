@@ -10,6 +10,9 @@ class DashboardApp:
         self.state = "MENU"
         self.log_buffer = [] 
         self.devices = [] # current session hosts
+        self.live_scan_devices = []
+        self.live_scan_phase = "idle"
+        self.live_scan_counts = {"found": 0, "enriched": 0}
         self.last_discovery_summary = None
         self.scroll_index = 0 # position for table windowing
         self._init_layout()
@@ -19,6 +22,63 @@ class DashboardApp:
         self.log_buffer.append(f"[dim]{timestamp}[/dim] {message}")
         if len(self.log_buffer) > 100:
             self.log_buffer.pop(0)
+
+    def apply_scan_event(self, event, payload=None):
+        payload = payload or {}
+        if event == "phase":
+            self.live_scan_phase = str(payload.get("state", "running"))
+            self.add_log(f"[bold cyan]{self.live_scan_phase.replace('_', ' ')}[/bold cyan]")
+            return
+
+        if event == "scan_targets_found":
+            targets = payload.get("targets", [])
+            if isinstance(targets, list):
+                for target in targets:
+                    if not isinstance(target, dict):
+                        continue
+                    ip = target.get("ip")
+                    if not ip:
+                        continue
+                    existing = next((item for item in self.live_scan_devices if item.get("ip") == ip), None)
+                    if existing is None:
+                        self.live_scan_devices.append(dict(target))
+                    else:
+                        existing.update(target)
+            self.live_scan_counts["found"] = int(payload.get("count", len(self.live_scan_devices)) or 0)
+            self.scroll_index = 0
+            self.add_log(f"[bold green]found {self.live_scan_counts['found']} responsive endpoints[/bold green]")
+            return
+
+        if event == "host_details_ready":
+            host_data = payload.get("host_data", [])
+            snmp_data = payload.get("snmp_data", [])
+            if isinstance(host_data, list):
+                for item in host_data:
+                    if isinstance(item, dict) and item.get("ip"):
+                        existing = next((device for device in self.live_scan_devices if device.get("ip") == item.get("ip")), None)
+                        if existing is None:
+                            self.live_scan_devices.append(dict(item))
+                        else:
+                            existing.update(item)
+            if isinstance(snmp_data, list):
+                for item in snmp_data:
+                    if isinstance(item, dict) and item.get("ip"):
+                        existing = next((device for device in self.live_scan_devices if device.get("ip") == item.get("ip")), None)
+                        if existing is None:
+                            self.live_scan_devices.append(dict(item))
+                        else:
+                            existing.update(item)
+            self.live_scan_counts["enriched"] = len(self.live_scan_devices)
+            self.add_log(f"[bold magenta]enriched {self.live_scan_counts['enriched']} assets[/bold magenta]")
+            return
+
+        if event == "scan_completed":
+            summary = payload.get("summary")
+            if isinstance(summary, dict):
+                self.last_discovery_summary = summary
+                self.devices = summary.get("snmp_data") or summary.get("host_data") or self.live_scan_devices
+            self.live_scan_phase = "completed"
+            self.add_log("[bold green]scan completed[/bold green]")
 
     def _init_layout(self):
         self.layout.split_column(
@@ -75,8 +135,18 @@ class DashboardApp:
             )
         elif self.state == "SCANNING":
             log_display = "\n".join(self.log_buffer[-10:])
+            live_devices = self.live_scan_devices or self.devices
+            live_preview = []
+            for dev in live_devices[:10]:
+                if isinstance(dev, dict):
+                    live_preview.append(f"{dev.get('ip', '?.?.?.?')}  {dev.get('hostname', dev.get('mac', 'unknown'))}")
+                else:
+                    ip_val = dev[0] if len(dev) > 0 else '?.?.?.?'
+                    name_val = dev[2] if len(dev) > 2 else 'unknown'
+                    live_preview.append(f"{ip_val}  {name_val}")
+            preview_text = "\n".join(live_preview) if live_preview else "Waiting for devices..."
             return Panel(
-                f"[bold yellow]Scanning Network...[/bold yellow]\n\n{log_display}",
+                f"[bold yellow]Scanning Network...[/bold yellow]\n[dim]Phase:[/dim] {self.live_scan_phase}\n\n[bold]Live Findings[/bold]\n{preview_text}\n\n[bold]Recent Events[/bold]\n{log_display}",
                 title="Scan Center", border_style="yellow"
             )
         elif self.state == "INVENTORY":

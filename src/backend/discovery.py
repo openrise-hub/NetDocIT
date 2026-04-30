@@ -149,6 +149,7 @@ def _empty_probe_metrics() -> dict[str, dict[str, Any]]:
 def discover_all(
     community_override=None,
     log_fn=None,
+    progress_fn=None,
     script_timeout_seconds=None,
     scan_profile="safe",
     abort_signal=None,
@@ -158,6 +159,14 @@ def discover_all(
 
     def log(msg):
         if log_fn: log_fn(msg)
+
+    def emit_progress(event, **payload):
+        if not callable(progress_fn):
+            return
+        try:
+            progress_fn(event, payload)
+        except Exception:
+            return
 
     def persist_log(level, message, source="Scanner"):
         try:
@@ -326,6 +335,7 @@ def discover_all(
             )
         except Exception:
             pass
+        emit_progress("scan_completed", summary=summary)
         return summary
     
     # execute live scanning cores
@@ -338,7 +348,9 @@ def discover_all(
     if should_abort():
         sentinel_triggered = True
         log("Discovery aborted by sentinel signal before ping sweep.")
+        emit_progress("phase", state="aborted_before_ping_sweep")
     else:
+        emit_progress("phase", state="icmp_ping_sweep")
         icmp_run = scheduler.run(
             [
                 ProbeTask(
@@ -367,6 +379,11 @@ def discover_all(
         scan_devices = _as_dict_list(scan_results)
         responsive_endpoint_count = len(scan_devices)
         log(f"ping sweep found {len(scan_devices)} responsive endpoints.")
+        emit_progress(
+            "scan_targets_found",
+            targets=[dict(dev) for dev in scan_devices],
+            count=responsive_endpoint_count,
+        )
         for dev in scan_devices:
             if 'mac' in dev:
                 dev['vendor'] = resolve_vendor(dev['mac'])
@@ -461,6 +478,7 @@ def discover_all(
             )
         except Exception:
             pass
+        emit_progress("scan_completed", summary=summary)
         return summary
 
     host_details = []
@@ -542,6 +560,7 @@ def discover_all(
                 )
             except Exception:
                 pass
+            emit_progress("scan_completed", summary=summary)
             return summary
 
     if found_ips and not sentinel_triggered and not scan_error:
@@ -552,6 +571,7 @@ def discover_all(
             log("Discovery aborted by sentinel signal before host enrichment.")
         else:
             log(f"Running WMI/CIM enumeration on {len(found_ips)} hosts...")
+            emit_progress("phase", state="host_enrichment")
             enrichment_run = scheduler.run(
                 [
                     ProbeTask(
@@ -580,6 +600,11 @@ def discover_all(
             snmp_details = snmp_results[0] if snmp_results else []
             if isinstance(snmp_details, list):
                 snmp_result_count = len(_as_dict_list(snmp_details))
+            emit_progress(
+                "host_details_ready",
+                host_data=[dict(item) for item in host_details] if isinstance(host_details, list) else [],
+                snmp_data=[dict(item) for item in snmp_details] if isinstance(snmp_details, list) else [],
+            )
     
     log("Generating final audit report...")
     # generate the readiness report
@@ -699,6 +724,8 @@ def discover_all(
 
     if sentinel_triggered:
         persist_log("WARNING", "Discovery aborted by sentinel signal.", "Scanner")
+
+    emit_progress("scan_completed", summary=summary)
     
     return summary
 
