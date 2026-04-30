@@ -17,7 +17,7 @@ def is_admin():
         return False
 
 
-def install_scheduler(time_str="08:00", profile="balanced", timeout_seconds=None):
+def install_scheduler(time_str="08:00", profile="safe", timeout_seconds=None):
     import subprocess
     import os
 
@@ -65,7 +65,7 @@ def show_dashboard():
     return choice
 
 
-def run_discovery(app=None, community=None, scan_profile="balanced", script_timeout_seconds=None):
+def run_discovery(app=None, community=None, scan_profile="safe", script_timeout_seconds=None):
     from .backend.database import add_log_entry
     add_log_entry("INFO", "Starting automated network discovery", "Scanner")
 
@@ -78,6 +78,14 @@ def run_discovery(app=None, community=None, scan_profile="balanced", script_time
         scan_profile=scan_profile,
         script_timeout_seconds=script_timeout_seconds,
     )
+
+    safety_profile = discovery.get("safety_profile", {})
+    if safety_profile:
+        add_log_entry(
+            "INFO",
+            f"Active safety profile: {safety_profile.get('name', 'unknown')} ({safety_profile.get('time_window', 'unknown')})",
+            "Scanner",
+        )
 
     if discovery.get("scan_completion_state") == "blocked":
         add_log_entry(
@@ -208,7 +216,7 @@ def main():
     parser.add_argument("-t", "--time", default="08:00", help="Time for daily schedule (HH:mm)")
     parser.add_argument("--timeout", type=float, help="Script timeout override in seconds")
     parser.add_argument("-c", "--community", help="SNMP community string override")
-    parser.add_argument("-p", "--profile", choices=["safe", "balanced", "aggressive"], default="balanced", help="Scan profile")
+    parser.add_argument("-p", "--profile", choices=["safe", "balanced", "aggressive"], default="safe", help="Scan profile")
 
     args = parser.parse_args()
     QUIET = args.quiet
