@@ -40,6 +40,13 @@ class TestDiscoverySafetyAbort(unittest.TestCase):
                  patch.object(discovery, "get_active_interfaces", return_value=[]), \
                  patch.object(discovery, "get_routing_table", return_value=[]), \
                  patch.object(discovery, "get_subnets", return_value=["10.0.0.0/24"]), \
+                 patch.object(discovery, "report_readiness", return_value={
+                     "subnets": [],
+                     "new": [],
+                     "missing": [],
+                     "priorities": {"high": [], "medium": [], "low": []},
+                     "gateways": [],
+                 }), \
                  patch.object(discovery, "run_ps_script", return_value=[]):
 
                 result = discovery.discover_all(scan_profile="safe", script_timeout_seconds=None)
