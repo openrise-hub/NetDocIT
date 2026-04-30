@@ -28,11 +28,21 @@ class MarkdownGenerator:
             self.content.append(f"| {ip} | {host} | {vendor} | {os_val} | {mac} |")
         self.content.append("")
 
+    def add_drift_section(self, drift_report):
+        if not drift_report:
+            return
+        self.add_header("Delta And Drift", 2)
+        summary = drift_report.get("summary", {})
+        self.content.append(f"- **Added:** {summary.get('added', 0)}")
+        self.content.append(f"- **Removed:** {summary.get('removed', 0)}")
+        self.content.append(f"- **Modified:** {summary.get('modified', 0)}")
+        self.content.append("")
+
     def save(self, filename="REPORT.md"):
         with open(filename, "w", encoding="utf-8") as f:
             f.write("\n".join(self.content))
 
-    def save_html(self, subnet_count, dev_stats, devices, filename="inventory.html", provenance=None, health_report=None):
+    def save_html(self, subnet_count, dev_stats, devices, filename="inventory.html", provenance=None, health_report=None, drift_report=None):
         from jinja2 import Environment, FileSystemLoader
         
         # setup jinja2 to load the template folder
@@ -43,6 +53,7 @@ class MarkdownGenerator:
         # render the data into the dashboard
         self.provenance = provenance
         self.health_report = health_report
+        self.drift_report = drift_report
         provenance_json = "{}"
         if provenance is not None:
             provenance_json = json.dumps(provenance, ensure_ascii=False, separators=(",", ":"))
@@ -50,6 +61,10 @@ class MarkdownGenerator:
         health_json = "{}"
         if health_report is not None:
             health_json = json.dumps(health_report, ensure_ascii=False, separators=(",", ":"))
+
+        drift_json = "{}"
+        if drift_report is not None:
+            drift_json = json.dumps(drift_report, ensure_ascii=False, separators=(",", ":"))
 
         output = template.render(
             timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -59,6 +74,7 @@ class MarkdownGenerator:
             devices=devices,
             provenance_json=provenance_json,
             health_json=health_json,
+            drift_json=drift_json,
         )
         
         with open(filename, "w", encoding="utf-8") as f:

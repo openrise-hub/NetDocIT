@@ -60,6 +60,7 @@ from .protocol_depth import build_service_identity_summary
 from .telemetry import make_provenance
 import importlib.metadata as _imd
 from .health import make_health_report
+from .drift import make_drift_report
 
 _COLLECTOR_NAME = "netdocit"
 try:
@@ -670,6 +671,13 @@ def discover_all(
             credential_audit=credential_audit,
             uptime_seconds=run_finished_monotonic - run_started_monotonic,
         )
+    except Exception:
+        pass
+    # Attach a small drift report comparing known subnets from DB to current mapped subnets
+    try:
+        baseline = get_all_subnets()
+        current_subnets = [s.get("cidr") if isinstance(s, dict) else s for s in summary.get("subnets", [])]
+        summary["drift_report"] = make_drift_report(current_subnets, baseline)
     except Exception:
         pass
 

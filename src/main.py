@@ -114,8 +114,17 @@ def run_discovery(app=None, community=None, scan_profile="safe", script_timeout_
     rep = MarkdownGenerator()
     rep.add_summary_section(len(discovery['subnets']), dev_stats)
     rep.add_device_table(devices)
+    rep.add_drift_section(discovery.get("drift_report"))
     rep.save("REPORT.md")
-    rep.save_html(len(discovery['subnets']), dev_stats, devices, "inventory.html")
+    rep.save_html(
+        len(discovery['subnets']),
+        dev_stats,
+        devices,
+        "inventory.html",
+        provenance=discovery.get("provenance"),
+        health_report=discovery.get("health_report"),
+        drift_report=discovery.get("drift_report"),
+    )
 
     add_log_entry("INFO", f"Discovery finished. Found {len(devices)} devices.", "Scanner")
 
@@ -159,6 +168,7 @@ def run_reporting():
     rep = MarkdownGenerator()
     rep.add_summary_section(len(subnets), dev_stats)
     rep.add_device_table(devices)
+    rep.add_drift_section(None)
     rep.save("REPORT.md")
     rep.save_html(len(subnets), dev_stats, devices, "inventory.html")
 

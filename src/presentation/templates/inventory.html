@@ -97,6 +97,9 @@
             {% if health_json %}
             <script id="health-data" type="application/json">{{ health_json | safe }}</script>
             {% endif %}
+            {% if drift_json %}
+            <script id="drift-data" type="application/json">{{ drift_json | safe }}</script>
+            {% endif %}
         </header>
 
         <section class="summary">
