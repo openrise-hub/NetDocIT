@@ -94,6 +94,9 @@
             {% if provenance_json %}
             <script id="provenance-data" type="application/json">{{ provenance_json | safe }}</script>
             {% endif %}
+            {% if health_json %}
+            <script id="health-data" type="application/json">{{ health_json | safe }}</script>
+            {% endif %}
         </header>
 
         <section class="summary">

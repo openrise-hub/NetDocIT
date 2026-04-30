@@ -51,7 +51,6 @@ except Exception:
 
 
 def run_scan_with_probes(targets, probe_impl, max_workers=4):
-    # Lazy import to avoid heavy optional deps at module import time
     from .probe_runner import ProbeTaskRunner
 
     runner = ProbeTaskRunner(max_workers=max_workers)
@@ -60,6 +59,7 @@ from .vendor_lookup import resolve_vendor
 from .protocol_depth import build_service_identity_summary
 from .telemetry import make_provenance
 import importlib.metadata as _imd
+from .health import make_health_report
 
 _COLLECTOR_NAME = "netdocit"
 try:
@@ -314,6 +314,17 @@ def discover_all(
             )
         except Exception:
             pass
+        # Attach health report
+        try:
+            summary["health_report"] = make_health_report(
+                collector_name=_COLLECTOR_NAME,
+                collector_version=_COLLECTOR_VERSION,
+                config_snapshot=config,
+                credential_audit=credential_audit,
+                uptime_seconds=run_finished_monotonic - run_started_monotonic,
+            )
+        except Exception:
+            pass
         return summary
     
     # execute live scanning cores
@@ -435,6 +446,17 @@ def discover_all(
                 credential_audit=credential_audit,
                 evidence=[],
                 explainability={"summary": "stopped by safety profile"},
+            )
+        except Exception:
+            pass
+        # Attach health report
+        try:
+            summary["health_report"] = make_health_report(
+                collector_name=_COLLECTOR_NAME,
+                collector_version=_COLLECTOR_VERSION,
+                config_snapshot=config,
+                credential_audit=credential_audit,
+                uptime_seconds=run_finished_monotonic - run_started_monotonic,
             )
         except Exception:
             pass
@@ -636,6 +658,17 @@ def discover_all(
             credential_audit=credential_audit,
             evidence=summary.get("scan_data", []),
             explainability={"summary": "completed"},
+        )
+    except Exception:
+        pass
+    # Attach health report for completed run
+    try:
+        summary["health_report"] = make_health_report(
+            collector_name=_COLLECTOR_NAME,
+            collector_version=_COLLECTOR_VERSION,
+            config_snapshot=config,
+            credential_audit=credential_audit,
+            uptime_seconds=run_finished_monotonic - run_started_monotonic,
         )
     except Exception:
         pass
