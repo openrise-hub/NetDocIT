@@ -64,6 +64,16 @@ DEFAULT_SCRIPT_TIMEOUT_SECONDS = 60
 MAX_SCRIPT_TIMEOUT_SECONDS = 300
 
 
+def _monotonic_now(last_value: float | None = None) -> float:
+    try:
+        value = float(time.monotonic())
+        return value
+    except Exception:
+        if last_value is not None:
+            return float(last_value)
+        return 0.0
+
+
 def _merge_probe_metrics(
     current: dict[str, dict[str, Any]],
     incoming: dict[str, dict[str, Any]],
@@ -134,7 +144,8 @@ def discover_all(
     scan_profile="safe",
     abort_signal=None,
 ):
-    run_started_monotonic = time.monotonic()
+    run_started_monotonic = _monotonic_now()
+    last_monotonic = run_started_monotonic
 
     def log(msg):
         if log_fn: log_fn(msg)
@@ -232,7 +243,8 @@ def discover_all(
         policy=scope_policy,
     )
     if not preflight_decision.allowed:
-        run_finished_monotonic = time.monotonic()
+        run_finished_monotonic = _monotonic_now(last_monotonic)
+        last_monotonic = run_finished_monotonic
         run_duration_seconds = run_finished_monotonic - run_started_monotonic
         summary = {
             "interfaces": interfaces,
@@ -322,15 +334,20 @@ def discover_all(
                 dev['vendor'] = resolve_vendor(dev['mac'])
         found_ips = [str(dev['ip']) for dev in scan_devices if 'ip' in dev]
 
-    safety_abort_reason = evaluate_safety_abort(
-        safety_profile,
-        run_duration_seconds=time.monotonic() - run_started_monotonic,
-        timeout_ratio=float(probe_metrics.get("icmp", {}).get("timeout_ratio", 0.0) or 0.0),
-        backpressure_events=int(probe_metrics.get("icmp", {}).get("backpressure_events", 0) or 0),
-        scan_error=scan_error,
-    )
+    safety_abort_reason = None
+    if not scan_error:
+        current_monotonic = _monotonic_now(last_monotonic)
+        last_monotonic = current_monotonic
+        safety_abort_reason = evaluate_safety_abort(
+            safety_profile,
+            run_duration_seconds=current_monotonic - run_started_monotonic,
+            timeout_ratio=float(probe_metrics.get("icmp", {}).get("timeout_ratio", 0.0) or 0.0),
+            backpressure_events=int(probe_metrics.get("icmp", {}).get("backpressure_events", 0) or 0),
+            scan_error=scan_error,
+        )
     if safety_abort_reason is not None:
-        run_finished_monotonic = time.monotonic()
+        run_finished_monotonic = _monotonic_now(last_monotonic)
+        last_monotonic = run_finished_monotonic
         run_duration_seconds = run_finished_monotonic - run_started_monotonic
         safety_state = "budget_exceeded" if safety_abort_reason == "safety_runtime_budget_exceeded" else "aborted"
         readiness = report_readiness(interfaces, routes, subnets)
@@ -393,7 +410,8 @@ def discover_all(
             policy=scope_policy,
         )
         if not host_check_decision.allowed:
-            run_finished_monotonic = time.monotonic()
+            run_finished_monotonic = _monotonic_now(last_monotonic)
+            last_monotonic = run_finished_monotonic
             run_duration_seconds = run_finished_monotonic - run_started_monotonic
             readiness = report_readiness(interfaces, routes, subnets)
             summary = {
@@ -440,11 +458,49 @@ def discover_all(
             summary["service_identity"] = build_service_identity_summary(summary)
             persist_log("WARNING", f"Discovery stopped by scope policy: {host_check_decision.reason_code}", "Scanner")
             return summary
+
+    if found_ips and not sentinel_triggered and not scan_error:
+        host_enum_target_count = len(found_ips)
+        snmp_target_count = len(found_ips)
+        if should_abort():
+            sentinel_triggered = True
+            log("Discovery aborted by sentinel signal before host enrichment.")
+        else:
+            log(f"Running WMI/CIM enumeration on {len(found_ips)} hosts...")
+            enrichment_run = scheduler.run(
+                [
+                    ProbeTask(
+                        "wmi",
+                        "global",
+                        "host-enum-batch",
+                        lambda: run_ps_script("host_enum.ps1", args=found_ips, timeout_seconds=script_timeout_seconds),
+                    ),
+                    ProbeTask(
+                        "snmp",
+                        "global",
+                        "snmp-batch",
+                        lambda: scan_appliances(found_ips, communities=community_override),
+                    ),
+                ]
+            )
+            probe_metrics = _merge_probe_metrics(probe_metrics, enrichment_run["metrics"])
+
+            wmi_results = enrichment_run["results"].get("wmi", [])
+            host_details = wmi_results[0] if wmi_results else []
+            if isinstance(host_details, list):
+                host_enum_result_count = len(_as_dict_list(host_details))
+
+            log("Attempting SNMP credential rotation on detected hardware...")
+            snmp_results = enrichment_run["results"].get("snmp", [])
+            snmp_details = snmp_results[0] if snmp_results else []
+            if isinstance(snmp_details, list):
+                snmp_result_count = len(_as_dict_list(snmp_details))
     
     log("Generating final audit report...")
     # generate the readiness report
     report = report_readiness(interfaces, routes, subnets)
-    run_finished_monotonic = time.monotonic()
+    run_finished_monotonic = _monotonic_now(last_monotonic)
+    last_monotonic = run_finished_monotonic
     run_duration_seconds = run_finished_monotonic - run_started_monotonic
     scan_timeout_exceeded = run_duration_seconds > script_timeout_seconds
     scan_completion_state = "completed"

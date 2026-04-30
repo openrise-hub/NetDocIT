@@ -216,7 +216,7 @@ def main():
     parser.add_argument("-t", "--time", default="08:00", help="Time for daily schedule (HH:mm)")
     parser.add_argument("--timeout", type=float, help="Script timeout override in seconds")
     parser.add_argument("-c", "--community", help="SNMP community string override")
-    parser.add_argument("-p", "--profile", choices=["safe", "balanced", "aggressive"], default="safe", help="Scan profile")
+    parser.add_argument("-p", "--profile", choices=["safe", "balanced", "aggressive"], default="balanced", help="Scan profile")
 
     args = parser.parse_args()
     QUIET = args.quiet
