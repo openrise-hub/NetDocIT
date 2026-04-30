@@ -125,6 +125,7 @@ def run_discovery(app=None, community=None, scan_profile="safe", script_timeout_
         health_report=discovery.get("health_report"),
         drift_report=discovery.get("drift_report"),
     )
+    rep.save_json(discovery, devices, dev_stats, "inventory.json", topology={"nodes": [], "edges": []})
 
     add_log_entry("INFO", f"Discovery finished. Found {len(devices)} devices.", "Scanner")
 
@@ -171,6 +172,7 @@ def run_reporting():
     rep.add_drift_section(None)
     rep.save("REPORT.md")
     rep.save_html(len(subnets), dev_stats, devices, "inventory.html")
+    rep.save_json(discovery_data, devices, dev_stats, "inventory.json", topology={"nodes": [], "edges": []})
 
 
 __version__ = "0.1.0"

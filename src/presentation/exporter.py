@@ -2,6 +2,8 @@ import os
 import json
 from datetime import datetime
 
+from .export_schema import build_export_package
+
 class MarkdownGenerator:
     def __init__(self):
         self.content = []
@@ -79,6 +81,17 @@ class MarkdownGenerator:
         
         with open(filename, "w", encoding="utf-8") as f:
             f.write(output)
+
+    def save_json(self, discovery, devices, dev_stats, filename="inventory.json", topology=None):
+        package = build_export_package(
+            discovery=discovery,
+            devices=devices,
+            device_stats=dev_stats,
+            topology=topology,
+        )
+
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(package, f, ensure_ascii=False, indent=2)
 
 if __name__ == "__main__":
     gen = MarkdownGenerator()
