@@ -40,3 +40,19 @@ def test_live_scan_sort_filter_and_selection_details():
     detail_text = app._selected_device_detail_text(app._selected_live_device()[0])
     assert "192.0.2.10" in detail_text
     assert "Run Provenance" in detail_text
+
+
+def test_scan_status_text_includes_budget_state():
+    app = DashboardApp()
+    app.live_scan_phase = "host_enrichment"
+    app.live_scan_counts = {"found": 4, "enriched": 2}
+    app.live_scan_sort_mode = "confidence"
+    app.live_scan_filter_mode = "fresh"
+    app.last_discovery_summary = {"scan_completion_state": "budget_exceeded", "script_timeout_seconds": 60}
+
+    status_text = app._scan_status_text()
+
+    assert "host_enrichment" in status_text
+    assert "Found:" in status_text
+    assert "Enriched:" in status_text
+    assert "budget: exceeded" in status_text

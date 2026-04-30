@@ -137,6 +137,32 @@ class DashboardApp:
             f"sort: {self.live_scan_sort_mode} | filter: {self.live_scan_filter_mode}"
         )
 
+    def _scan_status_text(self):
+        completion_state = None
+        timeout_seconds = None
+        if isinstance(self.last_discovery_summary, dict):
+            completion_state = self.last_discovery_summary.get("scan_completion_state")
+            timeout_seconds = self.last_discovery_summary.get("script_timeout_seconds")
+
+        budget_label = "budget: live"
+        if completion_state == "budget_exceeded":
+            budget_label = f"budget: exceeded ({timeout_seconds}s limit)"
+        elif completion_state == "aborted":
+            budget_label = "budget: aborted"
+        elif completion_state == "scan_error":
+            budget_label = "budget: scan error"
+        elif completion_state == "completed":
+            budget_label = "budget: completed"
+
+        return (
+            f"[bold yellow]Phase:[/bold yellow] {self.live_scan_phase}    "
+            f"[bold green]Found:[/bold green] {self.live_scan_counts['found']}    "
+            f"[bold magenta]Enriched:[/bold magenta] {self.live_scan_counts['enriched']}    "
+            f"[bold cyan]Sort:[/bold cyan] {self.live_scan_sort_mode}    "
+            f"[bold cyan]Filter:[/bold cyan] {self.live_scan_filter_mode}    "
+            f"[bold red]{budget_label}[/bold red]"
+        )
+
     def _selected_device_detail_text(self, device):
         if not device:
             return "Waiting for devices..."
@@ -213,10 +239,12 @@ class DashboardApp:
 
     def make_live_scan_view(self):
         selected_device, _ = self._selected_live_device()
+        layout = Layout()
+        layout.split_column(Layout(name="status", size=3), Layout(name="content", ratio=1))
+        layout["content"].split_row(Layout(name="findings", ratio=3), Layout(name="details", ratio=2))
+        layout["status"].update(Panel(self._scan_status_text(), title="Scan Status", border_style="magenta"))
         left = Panel(self._make_live_scan_list(), title="Findings", border_style="yellow")
         right = Panel(self._selected_device_detail_text(selected_device), title="Host Details", border_style="cyan")
-        layout = Layout()
-        layout.split_row(Layout(name="findings", ratio=3), Layout(name="details", ratio=2))
         layout["findings"].update(left)
         layout["details"].update(right)
         return layout
