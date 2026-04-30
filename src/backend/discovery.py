@@ -42,6 +42,7 @@ from .database import init_db, save_interface, clear_interfaces, save_route, cle
 from .processor import process_discovered_subnets, get_missing_subnets, get_priority_subnets
 from .safety_policy import evaluate_scope_policy, policy_to_summary, decision_to_summary
 from .safety_profiles import resolve_safety_profile, safety_profile_to_summary, evaluate_safety_abort
+from .secrets import resolve_snmp_credentials
 try:
     from .snmp_engine import scan_appliances  # type: ignore
 except Exception:
@@ -184,8 +185,12 @@ def discover_all(
         timeout_was_sanitized = True
         script_timeout_seconds = 1
 
-    scope_policy = load_scope_policy(load_config())
+    config = load_config()
+    scope_policy = load_scope_policy(config)
     safety_profile = resolve_safety_profile(normalized_profile, current_hour=time.localtime().tm_hour)
+    _, credential_audit = resolve_snmp_credentials(override=community_override, config=config)
+    if credential_audit.get("load_error"):
+        persist_log("WARNING", f"SNMP credential loading issue: {credential_audit['load_error']}", "Scanner")
     probe_metrics = _empty_probe_metrics()
 
     # unified entry point for environmental mapping
@@ -265,6 +270,7 @@ def discover_all(
             "scan_completion_reason": preflight_decision.reason_code,
             "scope_policy": policy_to_summary(scope_policy),
             "scope_policy_decision": decision_to_summary(preflight_decision),
+            "credential_audit": credential_audit,
             "probe_metrics": probe_metrics,
         }
         summary["host_data_count"] = 0
@@ -364,6 +370,7 @@ def discover_all(
             "scan_completion_reason": safety_abort_reason,
             "scope_policy": policy_to_summary(scope_policy),
             "scope_policy_decision": decision_to_summary(preflight_decision),
+            "credential_audit": credential_audit,
             "probe_metrics": probe_metrics,
         }
         summary["host_data_count"] = 0
@@ -425,6 +432,7 @@ def discover_all(
                 "scan_completion_reason": host_check_decision.reason_code,
                 "scope_policy": policy_to_summary(scope_policy),
                 "scope_policy_decision": decision_to_summary(host_check_decision),
+                "credential_audit": credential_audit,
                 "probe_metrics": probe_metrics,
             }
             summary["host_data_count"] = 0
@@ -487,6 +495,7 @@ def discover_all(
         "scan_completion_reason": scan_completion_reason,
         "scope_policy": policy_to_summary(scope_policy),
         "scope_policy_decision": decision_to_summary(preflight_decision),
+        "credential_audit": credential_audit,
         "probe_metrics": probe_metrics,
     }
 
