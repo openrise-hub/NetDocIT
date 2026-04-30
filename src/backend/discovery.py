@@ -51,13 +51,22 @@ except Exception:
 
 
 def run_scan_with_probes(targets, probe_impl, max_workers=4):
-    # Lazy import to avoid heavy optional deps at module import time
     from .probe_runner import ProbeTaskRunner
 
     runner = ProbeTaskRunner(max_workers=max_workers)
     return runner.run(targets, probe_impl)
 from .vendor_lookup import resolve_vendor
 from .protocol_depth import build_service_identity_summary
+from .telemetry import make_provenance
+import importlib.metadata as _imd
+from .health import make_health_report
+from .drift import make_drift_report
+
+_COLLECTOR_NAME = "netdocit"
+try:
+    _COLLECTOR_VERSION = _imd.version(_COLLECTOR_NAME)
+except Exception:
+    _COLLECTOR_VERSION = "dev"
 
 SUPPORTED_SCAN_PROFILES = {"safe", "balanced", "aggressive"}
 DEFAULT_SCRIPT_TIMEOUT_SECONDS = 60
@@ -288,6 +297,35 @@ def discover_all(
         summary["host_data_count"] = 0
         summary["snmp_data_count"] = 0
         summary["service_identity"] = build_service_identity_summary(summary)
+        # Attach provenance metadata
+        try:
+            summary["provenance"] = make_provenance(
+                collector_name=_COLLECTOR_NAME,
+                collector_version=_COLLECTOR_VERSION,
+                module="src.backend.discovery",
+                function_name="discover_all",
+                config_snapshot={
+                    "profile": normalized_profile,
+                    "script_timeout_seconds": script_timeout_seconds,
+                    "script_timeout_source": timeout_source,
+                },
+                credential_audit=credential_audit,
+                evidence=[],
+                explainability={"summary": "preflight blocked by scope policy"},
+            )
+        except Exception:
+            pass
+        # Attach health report
+        try:
+            summary["health_report"] = make_health_report(
+                collector_name=_COLLECTOR_NAME,
+                collector_version=_COLLECTOR_VERSION,
+                config_snapshot=config,
+                credential_audit=credential_audit,
+                uptime_seconds=run_finished_monotonic - run_started_monotonic,
+            )
+        except Exception:
+            pass
         return summary
     
     # execute live scanning cores
@@ -394,6 +432,35 @@ def discover_all(
         summary["snmp_data_count"] = 0
         summary["service_identity"] = build_service_identity_summary(summary)
         persist_log("WARNING", f"Discovery stopped by safety profile: {safety_abort_reason}", "Scanner")
+        # Attach provenance metadata
+        try:
+            summary["provenance"] = make_provenance(
+                collector_name=_COLLECTOR_NAME,
+                collector_version=_COLLECTOR_VERSION,
+                module="src.backend.discovery",
+                function_name="discover_all",
+                config_snapshot={
+                    "profile": normalized_profile,
+                    "script_timeout_seconds": script_timeout_seconds,
+                    "script_timeout_source": timeout_source,
+                },
+                credential_audit=credential_audit,
+                evidence=[],
+                explainability={"summary": "stopped by safety profile"},
+            )
+        except Exception:
+            pass
+        # Attach health report
+        try:
+            summary["health_report"] = make_health_report(
+                collector_name=_COLLECTOR_NAME,
+                collector_version=_COLLECTOR_VERSION,
+                config_snapshot=config,
+                credential_audit=credential_audit,
+                uptime_seconds=run_finished_monotonic - run_started_monotonic,
+            )
+        except Exception:
+            pass
         return summary
 
     host_details = []
@@ -457,6 +524,24 @@ def discover_all(
             summary["snmp_data_count"] = 0
             summary["service_identity"] = build_service_identity_summary(summary)
             persist_log("WARNING", f"Discovery stopped by scope policy: {host_check_decision.reason_code}", "Scanner")
+            # Attach provenance metadata
+            try:
+                summary["provenance"] = make_provenance(
+                    collector_name=_COLLECTOR_NAME,
+                    collector_version=_COLLECTOR_VERSION,
+                    module="src.backend.discovery",
+                    function_name="discover_all",
+                    config_snapshot={
+                        "profile": normalized_profile,
+                        "script_timeout_seconds": script_timeout_seconds,
+                        "script_timeout_source": timeout_source,
+                    },
+                    credential_audit=credential_audit,
+                    evidence=[],
+                    explainability={"summary": "stopped by host scope policy"},
+                )
+            except Exception:
+                pass
             return summary
 
     if found_ips and not sentinel_triggered and not scan_error:
@@ -558,6 +643,51 @@ def discover_all(
     summary["host_data_count"] = len(_as_dict_list(summary["host_data"]))
     summary["snmp_data_count"] = len(_as_dict_list(summary["snmp_data"]))
     summary["service_identity"] = build_service_identity_summary(summary)
+
+    # Attach provenance metadata for completed run
+    try:
+        summary["provenance"] = make_provenance(
+            collector_name=_COLLECTOR_NAME,
+            collector_version=_COLLECTOR_VERSION,
+            module="src.backend.discovery",
+            function_name="discover_all",
+            config_snapshot={
+                "profile": normalized_profile,
+                "script_timeout_seconds": script_timeout_seconds,
+                "script_timeout_source": timeout_source,
+            },
+            credential_audit=credential_audit,
+            evidence=summary.get("scan_data", []),
+            explainability={"summary": "completed"},
+        )
+    except Exception:
+        pass
+    # Attach health report for completed run
+    try:
+        summary["health_report"] = make_health_report(
+            collector_name=_COLLECTOR_NAME,
+            collector_version=_COLLECTOR_VERSION,
+            config_snapshot=config,
+            credential_audit=credential_audit,
+            uptime_seconds=run_finished_monotonic - run_started_monotonic,
+        )
+    except Exception:
+        pass
+    # Attach a small drift report comparing known subnets from DB to current mapped subnets
+    try:
+        baseline = get_all_subnets()
+        # Build a filtered list of CIDR strings for the current subnets to satisfy type expectations
+        current_subnets: list[str] = []
+        for s in summary.get("subnets", []):
+            if isinstance(s, dict):
+                cidr = s.get("cidr")
+                if isinstance(cidr, str):
+                    current_subnets.append(cidr)
+            elif isinstance(s, str):
+                current_subnets.append(s)
+        summary["drift_report"] = make_drift_report(current_subnets, baseline)
+    except Exception:
+        pass
 
     if scan_timeout_exceeded:
         timeout_message = (

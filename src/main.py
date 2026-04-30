@@ -114,8 +114,18 @@ def run_discovery(app=None, community=None, scan_profile="safe", script_timeout_
     rep = MarkdownGenerator()
     rep.add_summary_section(len(discovery['subnets']), dev_stats)
     rep.add_device_table(devices)
+    rep.add_drift_section(discovery.get("drift_report"))
     rep.save("REPORT.md")
-    rep.save_html(len(discovery['subnets']), dev_stats, devices, "inventory.html")
+    rep.save_html(
+        len(discovery['subnets']),
+        dev_stats,
+        devices,
+        "inventory.html",
+        provenance=discovery.get("provenance"),
+        health_report=discovery.get("health_report"),
+        drift_report=discovery.get("drift_report"),
+    )
+    rep.save_json(discovery, devices, dev_stats, "inventory.json", topology={"nodes": [], "edges": []})
 
     add_log_entry("INFO", f"Discovery finished. Found {len(devices)} devices.", "Scanner")
 
@@ -155,12 +165,23 @@ def run_reporting():
     devices = get_devices_sorted_by_ip()
     dev_stats = get_device_counts_by_os()
     subnets = get_all_subnets()
+    # Construct a minimal discovery-like payload for reporting/export when no live discovery is present
+    discovery_data = {
+        "interfaces": get_all_interfaces(),
+        "routes": get_all_routes(),
+        "subnets": [{"cidr": c, "tag": "Stored Database"} for c in subnets],
+        "scan_data": [],
+        "host_data": [],
+        "snmp_data": [],
+    }
 
     rep = MarkdownGenerator()
     rep.add_summary_section(len(subnets), dev_stats)
     rep.add_device_table(devices)
+    rep.add_drift_section(None)
     rep.save("REPORT.md")
     rep.save_html(len(subnets), dev_stats, devices, "inventory.html")
+    rep.save_json(discovery_data, devices, dev_stats, "inventory.json", topology={"nodes": [], "edges": []})
 
 
 __version__ = "0.1.0"

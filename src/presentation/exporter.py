@@ -1,5 +1,8 @@
 import os
+import json
 from datetime import datetime
+
+from .export_schema import build_export_package
 
 class MarkdownGenerator:
     def __init__(self):
@@ -27,11 +30,21 @@ class MarkdownGenerator:
             self.content.append(f"| {ip} | {host} | {vendor} | {os_val} | {mac} |")
         self.content.append("")
 
+    def add_drift_section(self, drift_report):
+        if not drift_report:
+            return
+        self.add_header("Delta And Drift", 2)
+        summary = drift_report.get("summary", {})
+        self.content.append(f"- **Added:** {summary.get('added', 0)}")
+        self.content.append(f"- **Removed:** {summary.get('removed', 0)}")
+        self.content.append(f"- **Modified:** {summary.get('modified', 0)}")
+        self.content.append("")
+
     def save(self, filename="REPORT.md"):
         with open(filename, "w", encoding="utf-8") as f:
             f.write("\n".join(self.content))
 
-    def save_html(self, subnet_count, dev_stats, devices, filename="inventory.html"):
+    def save_html(self, subnet_count, dev_stats, devices, filename="inventory.html", provenance=None, health_report=None, drift_report=None):
         from jinja2 import Environment, FileSystemLoader
         
         # setup jinja2 to load the template folder
@@ -40,16 +53,45 @@ class MarkdownGenerator:
         template = env.get_template('inventory.html')
         
         # render the data into the dashboard
+        self.provenance = provenance
+        self.health_report = health_report
+        self.drift_report = drift_report
+        provenance_json = "{}"
+        if provenance is not None:
+            provenance_json = json.dumps(provenance, ensure_ascii=False, separators=(",", ":"))
+
+        health_json = "{}"
+        if health_report is not None:
+            health_json = json.dumps(health_report, ensure_ascii=False, separators=(",", ":"))
+
+        drift_json = "{}"
+        if drift_report is not None:
+            drift_json = json.dumps(drift_report, ensure_ascii=False, separators=(",", ":"))
+
         output = template.render(
             timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             subnet_count=subnet_count,
             windows_count=dev_stats['windows'],
             appliance_count=dev_stats['appliances'],
-            devices=devices
+            devices=devices,
+            provenance_json=provenance_json,
+            health_json=health_json,
+            drift_json=drift_json,
         )
         
         with open(filename, "w", encoding="utf-8") as f:
             f.write(output)
+
+    def save_json(self, discovery, devices, dev_stats, filename="inventory.json", topology=None):
+        package = build_export_package(
+            discovery=discovery,
+            devices=devices,
+            device_stats=dev_stats,
+            topology=topology,
+        )
+
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(package, f, ensure_ascii=False, indent=2)
 
 if __name__ == "__main__":
     gen = MarkdownGenerator()
