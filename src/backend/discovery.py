@@ -378,15 +378,15 @@ def discover_all(
     if isinstance(scan_results, list):
         scan_devices = _as_dict_list(scan_results)
         responsive_endpoint_count = len(scan_devices)
+        for dev in scan_devices:
+            if 'mac' in dev:
+                dev['vendor'] = resolve_vendor(dev['mac'])
         log(f"ping sweep found {len(scan_devices)} responsive endpoints.")
         emit_progress(
             "scan_targets_found",
             targets=[dict(dev) for dev in scan_devices],
             count=responsive_endpoint_count,
         )
-        for dev in scan_devices:
-            if 'mac' in dev:
-                dev['vendor'] = resolve_vendor(dev['mac'])
         found_ips = [str(dev['ip']) for dev in scan_devices if 'ip' in dev]
 
     safety_abort_reason = None

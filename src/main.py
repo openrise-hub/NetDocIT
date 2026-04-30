@@ -292,6 +292,8 @@ def main():
                                     app.state = "MENU"
 
                             threading.Thread(target=run, daemon=True).start()
+                        elif app.state == "SCANNING" and key in {"w", "s", "n", "f"}:
+                            app.handle_scanning_key(key)
                         elif key == '2':
                             app.state = "INVENTORY"
                             app.devices = get_devices_sorted_by_ip()
