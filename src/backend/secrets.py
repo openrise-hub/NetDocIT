@@ -2,6 +2,9 @@ import json
 import os
 
 
+DEFAULT_DEV_SNMP_COMMUNITIES = ["public", "monitor", "read-only"]
+
+
 def _normalize_credentials(value):
     if isinstance(value, str):
         stripped = value.strip()
@@ -83,6 +86,13 @@ def resolve_snmp_credentials(override=None, config=None):
     legacy_credentials = _normalize_credentials(
         config.get("credentials", {}).get("snmp", []) if isinstance(config, dict) else []
     )
+    if not legacy_credentials:
+        dev_defaults = _normalize_credentials(DEFAULT_DEV_SNMP_COMMUNITIES)
+        audit = _base_audit("dev_defaults")
+        audit["loaded"] = True
+        audit["credential_count"] = len(dev_defaults)
+        return dev_defaults, audit
+
     audit = _base_audit("legacy_config")
     audit["loaded"] = bool(legacy_credentials)
     audit["credential_count"] = len(legacy_credentials)

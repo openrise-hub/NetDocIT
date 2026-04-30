@@ -85,6 +85,7 @@ Generated report/map artifacts are intended as runtime outputs and can be regene
 
 - Production mode expects SNMP communities from an external JSON file path set by `NETDOCIT_SECRETS_FILE`.
 - Legacy `data/config.json` credentials remain available for backward-compatible development mode.
+- If legacy credentials are empty in development mode, NetDocIT falls back to built-in default guesses (`public`, `monitor`, `read-only`).
 - When `NETDOCIT_ENV=production` and no external secrets file is configured, scans continue but credential loading failures are explicit in run metadata and logs.
 
 Example external secrets file:
