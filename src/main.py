@@ -165,6 +165,15 @@ def run_reporting():
     devices = get_devices_sorted_by_ip()
     dev_stats = get_device_counts_by_os()
     subnets = get_all_subnets()
+    # Construct a minimal discovery-like payload for reporting/export when no live discovery is present
+    discovery_data = {
+        "interfaces": get_all_interfaces(),
+        "routes": get_all_routes(),
+        "subnets": [{"cidr": c, "tag": "Stored Database"} for c in subnets],
+        "scan_data": [],
+        "host_data": [],
+        "snmp_data": [],
+    }
 
     rep = MarkdownGenerator()
     rep.add_summary_section(len(subnets), dev_stats)

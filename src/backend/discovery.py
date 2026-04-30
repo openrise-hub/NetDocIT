@@ -676,7 +676,15 @@ def discover_all(
     # Attach a small drift report comparing known subnets from DB to current mapped subnets
     try:
         baseline = get_all_subnets()
-        current_subnets = [s.get("cidr") if isinstance(s, dict) else s for s in summary.get("subnets", [])]
+        # Build a filtered list of CIDR strings for the current subnets to satisfy type expectations
+        current_subnets: list[str] = []
+        for s in summary.get("subnets", []):
+            if isinstance(s, dict):
+                cidr = s.get("cidr")
+                if isinstance(cidr, str):
+                    current_subnets.append(cidr)
+            elif isinstance(s, str):
+                current_subnets.append(s)
         summary["drift_report"] = make_drift_report(current_subnets, baseline)
     except Exception:
         pass
