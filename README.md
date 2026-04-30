@@ -81,6 +81,34 @@ Generated report/map artifacts are intended as runtime outputs and can be regene
 - `logs`: Show persisted scanner logs
 - `schedule --time HH:mm`: Register daily scheduled scan task (Administrator required)
 
+## Secret Hygiene (Wave 4.3)
+
+- Production mode expects SNMP communities from an external JSON file path set by `NETDOCIT_SECRETS_FILE`.
+- Legacy `data/config.json` credentials remain available for backward-compatible development mode.
+- If legacy credentials are empty in development mode, NetDocIT falls back to built-in default guesses (`public`, `monitor`, `read-only`).
+- When `NETDOCIT_ENV=production` and no external secrets file is configured, scans continue but credential loading failures are explicit in run metadata and logs.
+
+Example external secrets file:
+
+```json
+{
+	"credentials": {
+		"snmp": ["public", "monitor"]
+	},
+	"metadata": {
+		"rotation_due": "2026-06-01T00:00:00",
+		"expires_at": "2026-12-01T00:00:00"
+	}
+}
+```
+
+Usage:
+
+```powershell
+$env:NETDOCIT_SECRETS_FILE = "C:\secrets\netdocit-secrets.json"
+uv run netdocit scan --profile safe
+```
+
 ## Testing
 
 ```powershell

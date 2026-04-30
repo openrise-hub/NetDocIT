@@ -3,6 +3,9 @@ import json
 import os
 from typing import Any, cast
 
+from .config_parser import load_config as load_base_config
+from .secrets import resolve_snmp_credentials
+
 def load_config():
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     config_path = os.path.join(base_dir, 'data', 'config.json')
@@ -20,7 +23,7 @@ def query_snmp(ip, community='public'):
         'sysName': '1.3.6.1.2.1.1.5.0'
     }
     
-    results = {'ip': ip, 'community': community}
+    results = {'ip': ip}
     hl = cast(Any, hlapi)
     
     for key, oid in oids.items():
@@ -45,8 +48,8 @@ def scan_appliances(ips, communities=None):
     Iterates through IPs and attempts SNMP polling using a list of community strings.
     """
     if communities is None:
-        config = load_config()
-        communities = config.get('credentials', {}).get('snmp', ['public'])
+        config = load_base_config()
+        communities, _ = resolve_snmp_credentials(override=None, config=config)
     elif isinstance(communities, str):
         communities = [communities]
 

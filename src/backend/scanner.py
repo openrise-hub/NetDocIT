@@ -11,7 +11,9 @@ SCAN_PROFILES = {
 
 
 def get_scan_profile(name):
-    profile_name = str(name or "balanced").lower()
+    if name is None:
+        return dict(SCAN_PROFILES["safe"])
+    profile_name = str(name).lower()
     return dict(SCAN_PROFILES.get(profile_name, SCAN_PROFILES["balanced"]))
 
 def run_ps_script(script_name, args=None, timeout_seconds=60):

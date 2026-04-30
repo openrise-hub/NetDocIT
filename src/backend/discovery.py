@@ -37,9 +37,12 @@ def get_subnets(routes):
             continue
     return sorted(list(subnets))
 
-from .config_parser import load_config
+from .config_parser import load_config, load_scope_policy
 from .database import init_db, save_interface, clear_interfaces, save_route, clear_routes, get_last_scans, get_all_subnets, add_log_entry
 from .processor import process_discovered_subnets, get_missing_subnets, get_priority_subnets
+from .safety_policy import evaluate_scope_policy, policy_to_summary, decision_to_summary
+from .safety_profiles import resolve_safety_profile, safety_profile_to_summary, evaluate_safety_abort
+from .secrets import resolve_snmp_credentials
 try:
     from .snmp_engine import scan_appliances  # type: ignore
 except Exception:
@@ -59,6 +62,16 @@ from .protocol_depth import build_service_identity_summary
 SUPPORTED_SCAN_PROFILES = {"safe", "balanced", "aggressive"}
 DEFAULT_SCRIPT_TIMEOUT_SECONDS = 60
 MAX_SCRIPT_TIMEOUT_SECONDS = 300
+
+
+def _monotonic_now(last_value: float | None = None) -> float:
+    try:
+        value = float(time.monotonic())
+        return value
+    except Exception:
+        if last_value is not None:
+            return float(last_value)
+        return 0.0
 
 
 def _merge_probe_metrics(
@@ -105,14 +118,34 @@ def _merge_probe_metrics(
 
     return merged
 
+
+def _empty_probe_metrics() -> dict[str, dict[str, Any]]:
+    metrics: dict[str, dict[str, Any]] = {}
+    for probe in PROBE_TYPES:
+        metrics[probe] = {
+            "submitted": 0,
+            "completed": 0,
+            "timeouts": 0,
+            "backpressure_events": 0,
+            "max_in_flight": 0,
+            "throughput_per_second": 0.0,
+            "timeout_ratio": 0.0,
+            "avg_latency_seconds": 0.0,
+            "latency_p95_seconds": 0.0,
+            "recommended_timeout_seconds": 0.0,
+            "retry_attempts": 0,
+        }
+    return metrics
+
 def discover_all(
     community_override=None,
     log_fn=None,
     script_timeout_seconds=None,
-    scan_profile="balanced",
+    scan_profile="safe",
     abort_signal=None,
 ):
-    run_started_monotonic = time.monotonic()
+    run_started_monotonic = _monotonic_now()
+    last_monotonic = run_started_monotonic
 
     def log(msg):
         if log_fn: log_fn(msg)
@@ -163,6 +196,14 @@ def discover_all(
         timeout_was_sanitized = True
         script_timeout_seconds = 1
 
+    config = load_config()
+    scope_policy = load_scope_policy(config)
+    safety_profile = resolve_safety_profile(normalized_profile, current_hour=time.localtime().tm_hour)
+    _, credential_audit = resolve_snmp_credentials(override=community_override, config=config)
+    if credential_audit.get("load_error"):
+        persist_log("WARNING", f"SNMP credential loading issue: {credential_audit['load_error']}", "Scanner")
+    probe_metrics = _empty_probe_metrics()
+
     # unified entry point for environmental mapping
     log("Initializing local interface database...")
     clear_interfaces()
@@ -195,6 +236,59 @@ def discover_all(
     subnets = get_subnets(routes)
     scan_subnet_count = len(subnets)
     log(f"mapping {len(subnets)} subnets: {', '.join(subnets)}")
+
+    preflight_decision = evaluate_scope_policy(
+        candidate_subnets=subnets,
+        candidate_hosts=[],
+        policy=scope_policy,
+    )
+    if not preflight_decision.allowed:
+        run_finished_monotonic = _monotonic_now(last_monotonic)
+        last_monotonic = run_finished_monotonic
+        run_duration_seconds = run_finished_monotonic - run_started_monotonic
+        summary = {
+            "interfaces": interfaces,
+            "routes": routes,
+            "subnets": [],
+            "new": [],
+            "missing": [],
+            "priorities": {"high": [], "medium": [], "low": []},
+            "gateways": [r['gateway'] for r in routes if r.get('network') == "0.0.0.0"],
+            "scan_data": [],
+            "scan_error": False,
+            "scan_error_message": None,
+            "scan_subnet_count": scan_subnet_count,
+            "responsive_endpoint_count": 0,
+            "host_enum_target_count": 0,
+            "snmp_target_count": 0,
+            "host_enum_result_count": 0,
+            "snmp_result_count": 0,
+            "host_data": [],
+            "snmp_data": [],
+            "scan_profile": normalized_profile,
+            "safety_profile": safety_profile_to_summary(safety_profile),
+            "script_timeout_seconds": script_timeout_seconds,
+            "script_timeout_source": timeout_source,
+            "script_timeout_was_sanitized": timeout_was_sanitized,
+            "timeout_policy": {
+                "default_seconds": DEFAULT_SCRIPT_TIMEOUT_SECONDS,
+                "max_seconds": MAX_SCRIPT_TIMEOUT_SECONDS,
+            },
+            "run_started_monotonic": run_started_monotonic,
+            "run_finished_monotonic": run_finished_monotonic,
+            "run_duration_seconds": run_duration_seconds,
+            "scan_timeout_exceeded": False,
+            "scan_completion_state": "blocked",
+            "scan_completion_reason": preflight_decision.reason_code,
+            "scope_policy": policy_to_summary(scope_policy),
+            "scope_policy_decision": decision_to_summary(preflight_decision),
+            "credential_audit": credential_audit,
+            "probe_metrics": probe_metrics,
+        }
+        summary["host_data_count"] = 0
+        summary["snmp_data_count"] = 0
+        summary["service_identity"] = build_service_identity_summary(summary)
+        return summary
     
     # execute live scanning cores
     log("starting icmp ping sweep across subnets...")
@@ -229,26 +323,143 @@ def discover_all(
         log(f"scanner error: {scan_results['error']}")
         scan_results = []
     
-    # attempt host enumeration (wmi/cim) for all found ips
     found_ips = []
     responsive_endpoint_count = 0
     if isinstance(scan_results, list):
         scan_devices = _as_dict_list(scan_results)
         responsive_endpoint_count = len(scan_devices)
         log(f"ping sweep found {len(scan_devices)} responsive endpoints.")
-        # Resolve vendors for ping results
         for dev in scan_devices:
             if 'mac' in dev:
                 dev['vendor'] = resolve_vendor(dev['mac'])
         found_ips = [str(dev['ip']) for dev in scan_devices if 'ip' in dev]
-        
+
+    safety_abort_reason = None
+    if not scan_error:
+        current_monotonic = _monotonic_now(last_monotonic)
+        last_monotonic = current_monotonic
+        safety_abort_reason = evaluate_safety_abort(
+            safety_profile,
+            run_duration_seconds=current_monotonic - run_started_monotonic,
+            timeout_ratio=float(probe_metrics.get("icmp", {}).get("timeout_ratio", 0.0) or 0.0),
+            backpressure_events=int(probe_metrics.get("icmp", {}).get("backpressure_events", 0) or 0),
+            scan_error=scan_error,
+        )
+    if safety_abort_reason is not None:
+        run_finished_monotonic = _monotonic_now(last_monotonic)
+        last_monotonic = run_finished_monotonic
+        run_duration_seconds = run_finished_monotonic - run_started_monotonic
+        safety_state = "budget_exceeded" if safety_abort_reason == "safety_runtime_budget_exceeded" else "aborted"
+        readiness = report_readiness(interfaces, routes, subnets)
+        summary = {
+            "interfaces": interfaces,
+            "routes": routes,
+            "subnets": readiness["subnets"],
+            "new": readiness["new"],
+            "missing": readiness["missing"],
+            "priorities": readiness["priorities"],
+            "gateways": readiness["gateways"],
+            "scan_data": _as_dict_list(scan_results),
+            "scan_error": scan_error,
+            "scan_error_message": scan_error_message,
+            "scan_subnet_count": scan_subnet_count,
+            "responsive_endpoint_count": responsive_endpoint_count,
+            "host_enum_target_count": 0,
+            "snmp_target_count": 0,
+            "host_enum_result_count": 0,
+            "snmp_result_count": 0,
+            "host_data": [],
+            "snmp_data": [],
+            "scan_profile": normalized_profile,
+            "safety_profile": safety_profile_to_summary(safety_profile),
+            "script_timeout_seconds": script_timeout_seconds,
+            "script_timeout_source": timeout_source,
+            "script_timeout_was_sanitized": timeout_was_sanitized,
+            "timeout_policy": {
+                "default_seconds": DEFAULT_SCRIPT_TIMEOUT_SECONDS,
+                "max_seconds": MAX_SCRIPT_TIMEOUT_SECONDS,
+            },
+            "run_started_monotonic": run_started_monotonic,
+            "run_finished_monotonic": run_finished_monotonic,
+            "run_duration_seconds": run_duration_seconds,
+            "scan_timeout_exceeded": False,
+            "scan_completion_state": safety_state,
+            "scan_completion_reason": safety_abort_reason,
+            "scope_policy": policy_to_summary(scope_policy),
+            "scope_policy_decision": decision_to_summary(preflight_decision),
+            "credential_audit": credential_audit,
+            "probe_metrics": probe_metrics,
+        }
+        summary["host_data_count"] = 0
+        summary["snmp_data_count"] = 0
+        summary["service_identity"] = build_service_identity_summary(summary)
+        persist_log("WARNING", f"Discovery stopped by safety profile: {safety_abort_reason}", "Scanner")
+        return summary
+
     host_details = []
     snmp_details = []
     host_enum_target_count = 0
     snmp_target_count = 0
     host_enum_result_count = 0
     snmp_result_count = 0
-    if found_ips:
+    if not scan_error:
+        post_scan_hosts = [str(dev['ip']) for dev in _as_dict_list(scan_results) if 'ip' in dev]
+        host_check_decision = evaluate_scope_policy(
+            candidate_subnets=subnets,
+            candidate_hosts=post_scan_hosts,
+            policy=scope_policy,
+        )
+        if not host_check_decision.allowed:
+            run_finished_monotonic = _monotonic_now(last_monotonic)
+            last_monotonic = run_finished_monotonic
+            run_duration_seconds = run_finished_monotonic - run_started_monotonic
+            readiness = report_readiness(interfaces, routes, subnets)
+            summary = {
+                "interfaces": interfaces,
+                "routes": routes,
+                "subnets": readiness["subnets"],
+                "new": readiness["new"],
+                "missing": readiness["missing"],
+                "priorities": readiness["priorities"],
+                "gateways": readiness["gateways"],
+                "scan_data": _as_dict_list(scan_results),
+                "scan_error": False,
+                "scan_error_message": None,
+                "scan_subnet_count": scan_subnet_count,
+                "responsive_endpoint_count": responsive_endpoint_count,
+                "host_enum_target_count": 0,
+                "snmp_target_count": 0,
+                "host_enum_result_count": 0,
+                "snmp_result_count": 0,
+                "host_data": [],
+                "snmp_data": [],
+                "scan_profile": normalized_profile,
+                "safety_profile": safety_profile_to_summary(safety_profile),
+                "script_timeout_seconds": script_timeout_seconds,
+                "script_timeout_source": timeout_source,
+                "script_timeout_was_sanitized": timeout_was_sanitized,
+                "timeout_policy": {
+                    "default_seconds": DEFAULT_SCRIPT_TIMEOUT_SECONDS,
+                    "max_seconds": MAX_SCRIPT_TIMEOUT_SECONDS,
+                },
+                "run_started_monotonic": run_started_monotonic,
+                "run_finished_monotonic": run_finished_monotonic,
+                "run_duration_seconds": run_duration_seconds,
+                "scan_timeout_exceeded": False,
+                "scan_completion_state": "blocked",
+                "scan_completion_reason": host_check_decision.reason_code,
+                "scope_policy": policy_to_summary(scope_policy),
+                "scope_policy_decision": decision_to_summary(host_check_decision),
+                "credential_audit": credential_audit,
+                "probe_metrics": probe_metrics,
+            }
+            summary["host_data_count"] = 0
+            summary["snmp_data_count"] = 0
+            summary["service_identity"] = build_service_identity_summary(summary)
+            persist_log("WARNING", f"Discovery stopped by scope policy: {host_check_decision.reason_code}", "Scanner")
+            return summary
+
+    if found_ips and not sentinel_triggered and not scan_error:
         host_enum_target_count = len(found_ips)
         snmp_target_count = len(found_ips)
         if should_abort():
@@ -273,10 +484,12 @@ def discover_all(
                 ]
             )
             probe_metrics = _merge_probe_metrics(probe_metrics, enrichment_run["metrics"])
+
             wmi_results = enrichment_run["results"].get("wmi", [])
             host_details = wmi_results[0] if wmi_results else []
             if isinstance(host_details, list):
                 host_enum_result_count = len(_as_dict_list(host_details))
+
             log("Attempting SNMP credential rotation on detected hardware...")
             snmp_results = enrichment_run["results"].get("snmp", [])
             snmp_details = snmp_results[0] if snmp_results else []
@@ -286,7 +499,8 @@ def discover_all(
     log("Generating final audit report...")
     # generate the readiness report
     report = report_readiness(interfaces, routes, subnets)
-    run_finished_monotonic = time.monotonic()
+    run_finished_monotonic = _monotonic_now(last_monotonic)
+    last_monotonic = run_finished_monotonic
     run_duration_seconds = run_finished_monotonic - run_started_monotonic
     scan_timeout_exceeded = run_duration_seconds > script_timeout_seconds
     scan_completion_state = "completed"
@@ -321,6 +535,7 @@ def discover_all(
         "host_data": host_details if isinstance(host_details, list) else [],
         "snmp_data": snmp_details,
         "scan_profile": normalized_profile,
+        "safety_profile": safety_profile_to_summary(safety_profile),
         "script_timeout_seconds": script_timeout_seconds,
         "script_timeout_source": timeout_source,
         "script_timeout_was_sanitized": timeout_was_sanitized,
@@ -334,6 +549,9 @@ def discover_all(
         "scan_timeout_exceeded": scan_timeout_exceeded,
         "scan_completion_state": scan_completion_state,
         "scan_completion_reason": scan_completion_reason,
+        "scope_policy": policy_to_summary(scope_policy),
+        "scope_policy_decision": decision_to_summary(preflight_decision),
+        "credential_audit": credential_audit,
         "probe_metrics": probe_metrics,
     }
 

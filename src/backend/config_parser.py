@@ -2,6 +2,8 @@ import ipaddress
 import json
 import os
 
+from .safety_policy import ScopePolicy
+
 def validate_config(config):
     errors = []
     
@@ -28,6 +30,19 @@ def load_config(config_path="data/config.json"):
             
     except (json.JSONDecodeError, IOError):
         return {}
+
+
+def load_scope_policy(config=None):
+    policy = config.get("scope_policy", {}) if isinstance(config, dict) else {}
+    return ScopePolicy(
+        allow_subnets=frozenset(policy.get("allow_subnets", [])),
+        deny_subnets=frozenset(policy.get("deny_subnets", [])),
+        allow_hosts=frozenset(policy.get("allow_hosts", [])),
+        deny_hosts=frozenset(policy.get("deny_hosts", [])),
+        max_hosts=policy.get("max_hosts"),
+        max_packets_per_second=policy.get("max_packets_per_second"),
+        max_concurrency=policy.get("max_concurrency"),
+    )
 
 if __name__ == "__main__":
     print("Testing Supplemental Config Loader...")
