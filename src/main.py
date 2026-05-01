@@ -4,6 +4,7 @@ from .backend.database import ingest_live_data, get_devices_sorted_by_ip, get_de
 from .presentation.topology import TopologyManager
 from .presentation.exporter import MarkdownGenerator
 from .presentation.tui import DashboardApp
+from .backend.runtime_paths import runtime_path
 
 
 def is_admin():
@@ -110,23 +111,23 @@ def run_discovery(app=None, community=None, scan_profile="safe", script_timeout_
     if not QUIET:
         tm.display_tui()
 
-    tm.save_html_map("topology.html")
+    tm.save_html_map(str(runtime_path("topology.html")))
 
     rep = MarkdownGenerator()
     rep.add_summary_section(len(discovery['subnets']), dev_stats)
     rep.add_device_table(devices)
     rep.add_drift_section(discovery.get("drift_report"))
-    rep.save("REPORT.md")
+    rep.save(str(runtime_path("REPORT.md")))
     rep.save_html(
         len(discovery['subnets']),
         dev_stats,
         devices,
-        "inventory.html",
+        str(runtime_path("inventory.html")),
         provenance=discovery.get("provenance"),
         health_report=discovery.get("health_report"),
         drift_report=discovery.get("drift_report"),
     )
-    rep.save_json(discovery, devices, dev_stats, "inventory.json", topology={"nodes": [], "edges": []})
+    rep.save_json(discovery, devices, dev_stats, str(runtime_path("inventory.json")), topology={"nodes": [], "edges": []})
 
     add_log_entry("INFO", f"Discovery finished. Found {len(devices)} devices.", "Scanner")
 
@@ -160,7 +161,7 @@ def run_mapping(discovery_data=None):
     if not QUIET:
         tm.display_tui()
 
-    tm.save_html_map("topology.html")
+    tm.save_html_map(str(runtime_path("topology.html")))
 
 
 def run_reporting():
@@ -181,9 +182,9 @@ def run_reporting():
     rep.add_summary_section(len(subnets), dev_stats)
     rep.add_device_table(devices)
     rep.add_drift_section(None)
-    rep.save("REPORT.md")
-    rep.save_html(len(subnets), dev_stats, devices, "inventory.html")
-    rep.save_json(discovery_data, devices, dev_stats, "inventory.json", topology={"nodes": [], "edges": []})
+    rep.save(str(runtime_path("REPORT.md")))
+    rep.save_html(len(subnets), dev_stats, devices, str(runtime_path("inventory.html")))
+    rep.save_json(discovery_data, devices, dev_stats, str(runtime_path("inventory.json")), topology={"nodes": [], "edges": []})
 
 
 __version__ = "0.1.0"

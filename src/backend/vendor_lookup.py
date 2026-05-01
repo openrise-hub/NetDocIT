@@ -1,12 +1,13 @@
 import sqlite3
 import os
 
+from .runtime_paths import resource_path
+
 _CONN = None
 
 
 def _get_vendor_db_path():
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    return os.path.join(base_dir, 'data', 'vendors.sqlite')
+    return resource_path('data', 'vendors.sqlite')
 
 def init_db():
     db_path = _get_vendor_db_path()

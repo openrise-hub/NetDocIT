@@ -8,8 +8,9 @@ from contextlib import contextmanager
 from .asset_identity import resolve_canonical_asset
 from .temporal_state import reduce_temporal_state
 from .subnet_placement import resolve_subnet_placement
+from .runtime_paths import runtime_path
 
-DB_PATH = "data/netdocit.sqlite"
+DB_PATH = str(runtime_path("data", "netdocit.sqlite"))
 
 @contextmanager
 def get_db_connection():

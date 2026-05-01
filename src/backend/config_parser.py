@@ -3,6 +3,7 @@ import json
 import os
 
 from .safety_policy import ScopePolicy
+from .runtime_paths import resource_path, runtime_path
 
 def validate_config(config):
     errors = []
@@ -16,20 +17,29 @@ def validate_config(config):
             
     return errors
 
-def load_config(config_path="data/config.json"):
+def load_config(config_path=None):
     """
     Loads the configuration.
     Returns an empty dictionary if the file is missing or unreadable.
     """
-    if not os.path.exists(config_path):
-        return {}
+    candidate_paths = []
+    if config_path is not None:
+        candidate_paths.append(config_path)
+    candidate_paths.extend([
+        runtime_path("data", "config.json"),
+        resource_path("data", "config.json"),
+    ])
     
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-            
-    except (json.JSONDecodeError, IOError):
-        return {}
+    for candidate in candidate_paths:
+        if not os.path.exists(candidate):
+            continue
+        try:
+            with open(candidate, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return {}
+
+    return {}
 
 
 def load_scope_policy(config=None):

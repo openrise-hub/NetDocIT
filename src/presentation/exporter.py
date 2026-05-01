@@ -3,6 +3,7 @@ import json
 from datetime import datetime
 
 from .export_schema import build_export_package
+from ..backend.runtime_paths import resource_path
 
 class MarkdownGenerator:
     def __init__(self):
@@ -48,7 +49,7 @@ class MarkdownGenerator:
         from jinja2 import Environment, FileSystemLoader
         
         # setup jinja2 to load the template folder
-        template_dir = os.path.join(os.path.dirname(__file__), 'templates')
+        template_dir = resource_path('src', 'presentation', 'templates')
         env = Environment(loader=FileSystemLoader(template_dir))
         template = env.get_template('inventory.html')
         

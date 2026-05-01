@@ -2,6 +2,8 @@ import subprocess
 import json
 import os
 
+from .runtime_paths import resource_path
+
 
 SCAN_PROFILES = {
     "safe": {"script_timeout": 90},
@@ -21,7 +23,7 @@ def run_ps_script(script_name, args=None, timeout_seconds=60):
     if not isinstance(timeout_seconds, (int, float)) or timeout_seconds <= 0:
         timeout_seconds = 60
 
-    script_path = os.path.join(os.path.dirname(__file__), 'scripts', script_name)
+    script_path = resource_path("src", "backend", "scripts", script_name)
     
     if not os.path.exists(script_path):
         return {"error": f"Script not found: {script_name}"}
