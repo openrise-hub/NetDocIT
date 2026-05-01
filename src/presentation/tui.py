@@ -264,12 +264,27 @@ class DashboardApp:
             self.live_scan_selected_index = len(visible_devices) - 1
 
         for index, device in enumerate(visible_devices[:20]):
-            selected_marker = ">" if index == self.live_scan_selected_index else " "
+            selected = index == self.live_scan_selected_index
+            selected_marker = ">" if selected else " "
             label = self._live_device_label(device)
-            state = f"{self._live_confidence(device):.2f}"
+            conf = self._live_confidence(device)
+            state = f"{conf:.2f}"
             if int(device.get("_live_update_count", 1) or 1) > 1:
                 state = f"{state} +"
-            table.add_row(selected_marker, str(device.get("ip", "?.?.?.?")), label, state)
+
+            # color rows by confidence: high=green, med=yellow, low=red
+            if conf >= 0.80:
+                row_color = "green"
+            elif conf >= 0.50:
+                row_color = "yellow"
+            else:
+                row_color = "red"
+
+            row_style = f"{row_color}"
+            if selected:
+                row_style = f"reverse {row_style}"
+
+            table.add_row(selected_marker, str(device.get("ip", "?.?.?.?")), label, state, style=row_style)
 
         return f"[bold]{self._live_summary_line()}[/bold]\n\n{table}"
 
@@ -282,6 +297,101 @@ class DashboardApp:
             self.cycle_live_sort_mode()
         elif key == "f":
             self.toggle_live_filter_mode()
+        elif key == "c":
+            self.copy_ip_of_selected()
+        elif key == "i":
+            self.jump_selected_to_inventory()
+        elif key == "m":
+            self.copy_mac_of_selected()
+
+    def copy_ip_of_selected(self):
+        """Copy the selected device IP to the system clipboard (best-effort)."""
+        device, _ = self._selected_live_device()
+        if not device:
+            self.add_log("[dim]No device selected to copy[/dim]")
+            return
+        ip = device.get("ip")
+        if not ip:
+            self.add_log("[dim]Selected device has no IP[/dim]")
+            return
+        try:
+            import pyperclip
+            pyperclip.copy(ip)
+            self.add_log(f"[bold]copied {ip} to clipboard[/bold]")
+            return
+        except Exception:
+            pass
+        try:
+            import subprocess, sys
+            if sys.platform.startswith("win"):
+                p = subprocess.Popen(["clip"], stdin=subprocess.PIPE)
+                p.communicate(input=ip.encode("utf-8"))
+                self.add_log(f"[bold]copied {ip} to clipboard[/bold]")
+                return
+            elif sys.platform.startswith("linux"):
+                p = subprocess.Popen(["xclip", "-selection", "clipboard"], stdin=subprocess.PIPE)
+                p.communicate(input=ip.encode("utf-8"))
+                self.add_log(f"[bold]copied {ip} to clipboard[/bold]")
+                return
+        except Exception:
+            self.add_log(f"[dim]unable to copy to clipboard: {ip}[/dim]")
+
+    def jump_selected_to_inventory(self):
+        """Switch to inventory view and attempt to focus the selected device."""
+        device, _ = self._selected_live_device()
+        if not device:
+            self.add_log("[dim]No device selected to jump to inventory[/dim]")
+            return
+        ip = device.get("ip")
+        if not ip:
+            self.add_log("[dim]Selected device has no IP[/dim]")
+            return
+        # try to find in existing devices
+        for idx, dev in enumerate(self.devices):
+            if isinstance(dev, dict) and dev.get("ip") == ip:
+                self.state = "INVENTORY"
+                # position a few rows before the found device for context
+                self.scroll_index = max(0, idx - 2)
+                self.add_log(f"[bold cyan]jumped to inventory: {ip}[/bold cyan]")
+                return
+        # not found: add to the top of inventory and jump
+        self.devices.insert(0, device)
+        self.state = "INVENTORY"
+        self.scroll_index = 0
+        self.add_log(f"[bold cyan]added and jumped to inventory: {ip}[/bold cyan]")
+
+    def copy_mac_of_selected(self):
+        """Copy the selected device MAC address to the system clipboard (best-effort)."""
+        device, _ = self._selected_live_device()
+        if not device:
+            self.add_log("[dim]No device selected to copy MAC[/dim]")
+            return
+        mac = device.get("mac") or device.get("hwaddr") or device.get("mac_address")
+        if not mac:
+            self.add_log("[dim]Selected device has no MAC[/dim]")
+            return
+        mac_str = str(mac)
+        try:
+            import pyperclip
+            pyperclip.copy(mac_str)
+            self.add_log(f"[bold]copied {mac_str} to clipboard[/bold]")
+            return
+        except Exception:
+            pass
+        try:
+            import subprocess, sys
+            if sys.platform.startswith("win"):
+                p = subprocess.Popen(["clip"], stdin=subprocess.PIPE)
+                p.communicate(input=mac_str.encode("utf-8"))
+                self.add_log(f"[bold]copied {mac_str} to clipboard[/bold]")
+                return
+            elif sys.platform.startswith("linux"):
+                p = subprocess.Popen(["xclip", "-selection", "clipboard"], stdin=subprocess.PIPE)
+                p.communicate(input=mac_str.encode("utf-8"))
+                self.add_log(f"[bold]copied {mac_str} to clipboard[/bold]")
+                return
+        except Exception:
+            self.add_log(f"[dim]unable to copy to clipboard: {mac_str}[/dim]")
 
     def _init_layout(self):
         self.layout.split_column(
@@ -407,7 +517,7 @@ class DashboardApp:
         if self.state == "INVENTORY":
             hints = "[W/S] Scroll | Esc: Back | Q: Quit"
         elif self.state == "SCANNING":
-            hints = "[W/S] Select | N: Sort | F: Filter | Esc: Back | Q: Quit"
+            hints = "[W/S] Select | N: Sort | F: Filter | C: Copy IP | M: Copy MAC | I: Inventory | Esc: Back | Q: Quit"
         elif self.state == "LOGS":
             hints = "Esc: Back | Q: Quit"
             
