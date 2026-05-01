@@ -75,6 +75,7 @@ def run_discovery(app=None, community=None, scan_profile="safe", script_timeout_
     discovery = discover_all(
         community_override=community,
         log_fn=app.add_log if app else None,
+        progress_fn=app.apply_scan_event if app else None,
         scan_profile=scan_profile,
         script_timeout_seconds=script_timeout_seconds,
     )
@@ -131,6 +132,7 @@ def run_discovery(app=None, community=None, scan_profile="safe", script_timeout_
 
     if app:
         app.last_discovery_summary = discovery
+        app.devices = discovery.get("snmp_data") or discovery.get("host_data") or discovery.get("scan_data") or app.live_scan_devices
         if discovery.get("scan_timeout_exceeded"):
             app.add_log(
                 f"[bold yellow]Discovery exceeded its timeout budget after {discovery.get('run_duration_seconds', 0):.1f}s."
@@ -290,6 +292,8 @@ def main():
                                     app.state = "MENU"
 
                             threading.Thread(target=run, daemon=True).start()
+                        elif app.state == "SCANNING" and key in {"w", "s", "n", "f"}:
+                            app.handle_scanning_key(key)
                         elif key == '2':
                             app.state = "INVENTORY"
                             app.devices = get_devices_sorted_by_ip()
