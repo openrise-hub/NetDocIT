@@ -23,7 +23,11 @@ $args = @(
     "--add-data", $datas[0],
     "--add-data", $datas[1],
     "--add-data", $datas[2],
-    "src\main.py"
+    "main.py"
 )
 
 python @args
+
+if (Test-Path "NetDocIT.spec") {
+    Remove-Item "NetDocIT.spec" -Force
+}
