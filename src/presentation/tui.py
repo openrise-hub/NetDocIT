@@ -189,6 +189,28 @@ class DashboardApp:
             how = explainability.get("how") or "unknown"
             lines.append(f"[dim]Why:[/dim] {why}")
             lines.append(f"[dim]How:[/dim] {how}")
+
+        tcp_scan = {}
+        if isinstance(self.last_discovery_summary, dict):
+            tcp_scan = self.last_discovery_summary.get("tcp_port_scan_data") or {}
+        ip = device.get("ip")
+        host_ports = tcp_scan.get(ip, []) if ip else []
+        open_entries = [e for e in host_ports if isinstance(e, dict) and e.get("open")]
+        if open_entries:
+            from ..backend.transports.fingerprint import PORT_SERVICE_MAP
+            lines.append("")
+            lines.append("[bold]Open TCP Ports[/bold]")
+            for entry in sorted(open_entries, key=lambda e: e.get("port", 0)):
+                port = entry.get("port")
+                svc = PORT_SERVICE_MAP.get(port, "")
+                banner = entry.get("banner")
+                rtt = entry.get("rtt_ms")
+                if banner:
+                    first_line = (banner or "").split("\n")[0].strip()[:60]
+                    lines.append(f"[dim]{port}[/dim]/{svc}  {first_line}")
+                else:
+                    rtt_str = f" {rtt}ms" if rtt else ""
+                    lines.append(f"[dim]{port}[/dim]/{svc}{rtt_str}")
         if isinstance(provenance, dict) and provenance:
             lines.append("")
             lines.append("[bold]Run Provenance[/bold]")

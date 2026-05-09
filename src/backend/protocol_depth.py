@@ -26,6 +26,9 @@ def build_service_identity_summary(discovery_summary: dict[str, Any]) -> dict[st
                 }
             )
 
+    for item in discovery_summary.get("service_data", []):
+        evidence_items.append(item)
+
     if not evidence_items:
         return {
             "display_name": "unknown",

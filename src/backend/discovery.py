@@ -3,6 +3,8 @@ import time
 from typing import Any
 from .adaptive_scheduler import AdaptiveProbeScheduler, ProbeTask, PROBE_TYPES
 from .scanner import run_ps_script, get_scan_profile
+from .transports.tcp_scan import TcpPortScanner
+from .transports.fingerprint import classify_host_services
 
 def _as_dict_list(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
@@ -318,6 +320,10 @@ def discover_all(
         }
         summary["host_data_count"] = 0
         summary["snmp_data_count"] = 0
+        summary["tcp_port_scan_data"] = {}
+        summary["tcp_port_scan_target_count"] = 0
+        summary["tcp_port_scan_result_count"] = 0
+        summary["service_data"] = []
         summary["service_identity"] = build_service_identity_summary(summary)
         # Attach provenance metadata
         try:
@@ -431,6 +437,24 @@ def discover_all(
             )
         found_ips = [str(dev['ip']) for dev in scan_devices if 'ip' in dev]
 
+    tcp_port_scan_data: dict[str, list[dict]] = {}
+    tcp_port_scan_target_count = 0
+    tcp_port_scan_result_count = 0
+    service_evidence: list[dict[str, Any]] = []
+    if found_ips and not scan_error:
+        tcp_port_scan_target_count = len(found_ips)
+        log(f"scanning {tcp_port_scan_target_count} hosts for open TCP ports...")
+        emit_progress("phase", state="tcp_port_scan")
+        tcp_scanner = TcpPortScanner(timeout_s=0.2)
+        tcp_port_scan_data = tcp_scanner.scan_hosts(found_ips)
+        for ip, entries in tcp_port_scan_data.items():
+            evidence = classify_host_services(entries)
+            service_evidence.extend(evidence)
+            for e in entries:
+                if e.get("open"):
+                    tcp_port_scan_result_count += 1
+        log(f"TCP scan complete: {tcp_port_scan_result_count} open ports across {tcp_port_scan_target_count} hosts")
+
     safety_abort_reason = None
     if not scan_error:
         current_monotonic = _monotonic_now(last_monotonic)
@@ -491,6 +515,10 @@ def discover_all(
         }
         summary["host_data_count"] = 0
         summary["snmp_data_count"] = 0
+        summary["tcp_port_scan_data"] = tcp_port_scan_data
+        summary["tcp_port_scan_target_count"] = tcp_port_scan_target_count
+        summary["tcp_port_scan_result_count"] = tcp_port_scan_result_count
+        summary["service_data"] = service_evidence
         summary["service_identity"] = build_service_identity_summary(summary)
         persist_log("WARNING", f"Discovery stopped by safety profile: {safety_abort_reason}", "Scanner")
         # Attach provenance metadata
@@ -584,6 +612,10 @@ def discover_all(
             }
             summary["host_data_count"] = 0
             summary["snmp_data_count"] = 0
+            summary["tcp_port_scan_data"] = tcp_port_scan_data
+            summary["tcp_port_scan_target_count"] = tcp_port_scan_target_count
+            summary["tcp_port_scan_result_count"] = tcp_port_scan_result_count
+            summary["service_data"] = service_evidence
             summary["service_identity"] = build_service_identity_summary(summary)
             persist_log("WARNING", f"Discovery stopped by scope policy: {host_check_decision.reason_code}", "Scanner")
             # Attach provenance metadata
@@ -711,6 +743,10 @@ def discover_all(
 
     summary["host_data_count"] = len(_as_dict_list(summary["host_data"]))
     summary["snmp_data_count"] = len(_as_dict_list(summary["snmp_data"]))
+    summary["tcp_port_scan_data"] = tcp_port_scan_data
+    summary["tcp_port_scan_target_count"] = tcp_port_scan_target_count
+    summary["tcp_port_scan_result_count"] = tcp_port_scan_result_count
+    summary["service_data"] = service_evidence
     summary["service_identity"] = build_service_identity_summary(summary)
 
     # Attach provenance metadata for completed run
