@@ -4,6 +4,7 @@ from .backend.database import ingest_live_data, get_devices_sorted_by_ip, get_de
 from .presentation.topology import TopologyManager
 from .presentation.exporter import MarkdownGenerator
 from .presentation.tui import DashboardApp
+from .backend.runtime_paths import runtime_path
 
 
 def is_admin():
@@ -67,7 +68,13 @@ def show_dashboard():
 
 def run_discovery(app=None, community=None, scan_profile="safe", script_timeout_seconds=None):
     from .backend.database import add_log_entry
-    add_log_entry("INFO", "Starting automated network discovery", "Scanner")
+    def _safe_log(level, message, source):
+        try:
+            add_log_entry(level, message, source)
+        except Exception:
+            return
+
+    _safe_log("INFO", "Starting automated network discovery", "Scanner")
 
     if app:
         app.state = "SCANNING"
@@ -82,14 +89,14 @@ def run_discovery(app=None, community=None, scan_profile="safe", script_timeout_
 
     safety_profile = discovery.get("safety_profile", {})
     if safety_profile:
-        add_log_entry(
+        _safe_log(
             "INFO",
             f"Active safety profile: {safety_profile.get('name', 'unknown')} ({safety_profile.get('time_window', 'unknown')})",
             "Scanner",
         )
 
     if discovery.get("scan_completion_state") == "blocked":
-        add_log_entry(
+        _safe_log(
             "WARN",
             f"Discovery blocked: {discovery.get('scan_completion_reason')}",
             "Scanner",
@@ -110,25 +117,25 @@ def run_discovery(app=None, community=None, scan_profile="safe", script_timeout_
     if not QUIET:
         tm.display_tui()
 
-    tm.save_html_map("topology.html")
+    tm.save_html_map(str(runtime_path("topology.html")))
 
     rep = MarkdownGenerator()
     rep.add_summary_section(len(discovery['subnets']), dev_stats)
     rep.add_device_table(devices)
     rep.add_drift_section(discovery.get("drift_report"))
-    rep.save("REPORT.md")
+    rep.save(str(runtime_path("REPORT.md")))
     rep.save_html(
         len(discovery['subnets']),
         dev_stats,
         devices,
-        "inventory.html",
+        str(runtime_path("inventory.html")),
         provenance=discovery.get("provenance"),
         health_report=discovery.get("health_report"),
         drift_report=discovery.get("drift_report"),
     )
-    rep.save_json(discovery, devices, dev_stats, "inventory.json", topology={"nodes": [], "edges": []})
+    rep.save_json(discovery, devices, dev_stats, str(runtime_path("inventory.json")), topology={"nodes": [], "edges": []})
 
-    add_log_entry("INFO", f"Discovery finished. Found {len(devices)} devices.", "Scanner")
+    _safe_log("INFO", f"Discovery finished. Found {len(devices)} devices.", "Scanner")
 
     if app:
         app.last_discovery_summary = discovery
@@ -137,7 +144,6 @@ def run_discovery(app=None, community=None, scan_profile="safe", script_timeout_
             app.add_log(
                 f"[bold yellow]Discovery exceeded its timeout budget after {discovery.get('run_duration_seconds', 0):.1f}s."
             )
-        app.state = "MENU"
 
     return discovery
 
@@ -160,7 +166,7 @@ def run_mapping(discovery_data=None):
     if not QUIET:
         tm.display_tui()
 
-    tm.save_html_map("topology.html")
+    tm.save_html_map(str(runtime_path("topology.html")))
 
 
 def run_reporting():
@@ -181,9 +187,9 @@ def run_reporting():
     rep.add_summary_section(len(subnets), dev_stats)
     rep.add_device_table(devices)
     rep.add_drift_section(None)
-    rep.save("REPORT.md")
-    rep.save_html(len(subnets), dev_stats, devices, "inventory.html")
-    rep.save_json(discovery_data, devices, dev_stats, "inventory.json", topology={"nodes": [], "edges": []})
+    rep.save(str(runtime_path("REPORT.md")))
+    rep.save_html(len(subnets), dev_stats, devices, str(runtime_path("inventory.html")))
+    rep.save_json(discovery_data, devices, dev_stats, str(runtime_path("inventory.json")), topology={"nodes": [], "edges": []})
 
 
 __version__ = "0.1.0"
@@ -288,8 +294,6 @@ def main():
                                     from .backend.database import add_log_entry
                                     add_log_entry("ERROR", f"Discovery workflow failed: {exc}", "Scanner")
                                     app.add_log(f"[ERROR] Discovery workflow failed: {exc}")
-                                finally:
-                                    app.state = "MENU"
 
                             threading.Thread(target=run, daemon=True).start()
                         elif app.state == "SCANNING" and key in {"w", "s", "n", "f"}:

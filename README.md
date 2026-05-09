@@ -28,6 +28,16 @@ Using `pip`:
 python -m pip install -e .
 ```
 
+## Portable Build
+
+Build a standalone Windows executable with PyInstaller:
+
+```powershell
+.\tools\build_portable.ps1
+```
+
+The executable is written to `dist\portable\NetDocIT.exe` and carries the bundled templates and PowerShell scripts it needs at runtime.
+
 ## Quick Start
 
 Run full discovery and generate reports:

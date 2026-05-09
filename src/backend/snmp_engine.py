@@ -8,16 +8,16 @@ from typing import Any, cast
 
 from .config_parser import load_config as load_base_config
 from .secrets import resolve_snmp_credentials
+from .runtime_paths import resource_path, runtime_path
 
 def load_config():
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    config_path = os.path.join(base_dir, 'data', 'config.json')
-    try:
-        if os.path.exists(config_path):
-            with open(config_path, 'r') as f:
-                return json.load(f)
-    except Exception:
-        pass
+    for config_path in (runtime_path("data", "config.json"), resource_path("data", "config.json")):
+        try:
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+        except Exception:
+            pass
     return {"credentials": {"snmp": ["public"]}}
 
 def query_snmp(ip, community='public'):

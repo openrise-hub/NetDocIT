@@ -31,7 +31,7 @@ class TestDiscoveryProfileMetadata(unittest.TestCase):
                 result = discovery.discover_all(scan_profile="safe", script_timeout_seconds=None)
 
                 self.assertEqual(result["scan_profile"], "safe")
-                self.assertEqual(result["script_timeout_seconds"], 90)
+                self.assertEqual(result["script_timeout_seconds"], 180)
 
     def test_discover_all_defaults_unknown_profile_to_balanced(self):
         fake_pysnmp = types.ModuleType("pysnmp")
@@ -58,7 +58,7 @@ class TestDiscoveryProfileMetadata(unittest.TestCase):
                 result = discovery.discover_all(scan_profile="unknown", script_timeout_seconds=None)
 
                 self.assertEqual(result["scan_profile"], "balanced")
-                self.assertEqual(result["script_timeout_seconds"], 60)
+                self.assertEqual(result["script_timeout_seconds"], 120)
 
 
 if __name__ == "__main__":

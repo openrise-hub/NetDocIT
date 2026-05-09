@@ -30,7 +30,7 @@ class TestDiscoveryProfileTimeout(unittest.TestCase):
 
                 discovery.discover_all(scan_profile="safe", script_timeout_seconds=None)
 
-                get_active_interfaces.assert_called_once_with(timeout_seconds=90)
+                get_active_interfaces.assert_called_once_with(timeout_seconds=180)
 
 
 if __name__ == "__main__":

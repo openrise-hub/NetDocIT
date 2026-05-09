@@ -21,7 +21,7 @@ def get_routing_table(timeout_seconds=60):
         return _as_dict_list(res.get("routes", []))
     return []
 
-def get_subnets(routes):
+def get_subnets(routes, max_addresses=1024):
     subnets = set()
     for r in routes:
         try:
@@ -30,9 +30,13 @@ def get_subnets(routes):
                 net = ipaddress.IPv4Network(f"{r['network']}/{r['prefix_len']}", strict=False)
             else:
                 continue
-                
-            if net.prefixlen > 0 and net.prefixlen < 32:
-                subnets.add(str(net))
+            if net.prefixlen <= 0 or net.prefixlen >= 32:
+                continue
+            if net.is_loopback or net.is_multicast or net.is_unspecified or net.is_reserved or net.is_link_local:
+                continue
+            if net.num_addresses > int(max_addresses or 0):
+                continue
+            subnets.add(str(net))
         except ValueError:
             continue
     return sorted(list(subnets))
@@ -254,6 +258,15 @@ def discover_all(
     subnets = get_subnets(routes)
     scan_subnet_count = len(subnets)
     log(f"mapping {len(subnets)} subnets: {', '.join(subnets)}")
+    fallback_gateways = sorted(
+        {
+            str(route.get("gateway"))
+            for route in routes
+            if route.get("network") == "0.0.0.0"
+            and route.get("gateway")
+            and route.get("gateway") != "0.0.0.0"
+        }
+    )
 
     preflight_decision = evaluate_scope_policy(
         candidate_subnets=subnets,
@@ -375,28 +388,59 @@ def discover_all(
     
     found_ips = []
     responsive_endpoint_count = 0
+    icmp_timeout_ratio = float(probe_metrics.get("icmp", {}).get("timeout_ratio", 0.0) or 0.0)
     if isinstance(scan_results, list):
-        scan_devices = _as_dict_list(scan_results)
+        icmp_scan_devices = _as_dict_list(scan_results)
+        scan_devices = list(icmp_scan_devices)
+
+        if not icmp_scan_devices and fallback_gateways:
+            scan_devices = [
+                {
+                    "ip": gateway,
+                    "mac": "Unknown",
+                    "os": "Unknown",
+                    "vendor": "Gateway",
+                    "hostname": gateway,
+                    "explainability": {
+                        "why": "Default gateway fallback after no ICMP responders",
+                        "how": "route-table default gateway fallback",
+                        "confidence": 0.35,
+                    },
+                }
+                for gateway in fallback_gateways
+            ]
+            scan_results = [dict(device) for device in scan_devices]
+            log(
+                f"ping sweep found no ICMP responders; using {len(scan_devices)} "
+                "default gateway fallback target(s)."
+            )
+
         responsive_endpoint_count = len(scan_devices)
         for dev in scan_devices:
             if 'mac' in dev:
                 dev['vendor'] = resolve_vendor(dev['mac'])
-        log(f"ping sweep found {len(scan_devices)} responsive endpoints.")
-        emit_progress(
-            "scan_targets_found",
-            targets=[dict(dev) for dev in scan_devices],
-            count=responsive_endpoint_count,
-        )
+
+        if icmp_scan_devices:
+            log(f"ping sweep found {len(scan_devices)} responsive endpoints.")
+
+        if scan_devices:
+            emit_progress(
+                "scan_targets_found",
+                targets=[dict(dev) for dev in scan_devices],
+                count=responsive_endpoint_count,
+            )
         found_ips = [str(dev['ip']) for dev in scan_devices if 'ip' in dev]
 
     safety_abort_reason = None
     if not scan_error:
         current_monotonic = _monotonic_now(last_monotonic)
         last_monotonic = current_monotonic
+        if responsive_endpoint_count == 0 and fallback_gateways:
+            icmp_timeout_ratio = 0.0
         safety_abort_reason = evaluate_safety_abort(
             safety_profile,
             run_duration_seconds=current_monotonic - run_started_monotonic,
-            timeout_ratio=float(probe_metrics.get("icmp", {}).get("timeout_ratio", 0.0) or 0.0),
+            timeout_ratio=icmp_timeout_ratio,
             backpressure_events=int(probe_metrics.get("icmp", {}).get("backpressure_events", 0) or 0),
             scan_error=scan_error,
         )
