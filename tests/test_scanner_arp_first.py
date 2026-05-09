@@ -25,7 +25,7 @@ Interface: 192.168.0.186 --- 0x12
     @patch("src.backend.scanner._iter_ips_for_subnets")
     @patch("src.backend.scanner._parse_arp_table")
     def test_arp_seed_does_not_skip_active_probing(self, mock_arp, mock_iter, mock_icmp):
-        mock_arp.return_value = ["192.168.0.1"]
+        mock_arp.return_value = {"192.168.0.1": "AA:BB:CC:DD:EE:FF"}
         mock_iter.return_value = ["192.168.0.1", "192.168.0.10"]
         mock_icmp.side_effect = lambda ip, _timeout_ms: ip == "192.168.0.10"
 
