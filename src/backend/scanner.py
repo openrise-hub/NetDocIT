@@ -8,6 +8,7 @@ import ipaddress
 from typing import Iterable
 
 from .runtime_paths import resource_path
+from .transports.icmp import IcmpScanner
 
 
 SCAN_PROFILES = {
@@ -182,18 +183,12 @@ def _python_ping_sweep(subnets, timeout_seconds=60, concurrency=64):
 
     timeout_ms = min(1000, max(150, int((timeout_seconds / 10) * 1000)))
     responsive = list(seeded_ips)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as ex:
-        futures = {ex.submit(_icmp_ping, ip, timeout_ms): ip for ip in ips_to_scan}
-        try:
-            for fut in concurrent.futures.as_completed(futures, timeout=max(1, timeout_seconds)):
-                ip = futures[fut]
-                try:
-                    if fut.result():
-                        responsive.append(ip)
-                except Exception:
-                    continue
-        except TimeoutError:
-            pass
+
+    scanner = IcmpScanner(timeout_ms=timeout_ms)
+    ping_results = scanner.batch_ping(ips_to_scan)
+    for ip, rtt in ping_results.items():
+        if rtt is not None:
+            responsive.append(ip)
 
     if len(set(responsive)) <= len(set(seeded_ips)):
         ports = [22, 80, 443, 445, 3389, 135, 139, 8080, 8443]
