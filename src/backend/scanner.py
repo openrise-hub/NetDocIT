@@ -170,13 +170,15 @@ def _python_ping_sweep(subnets, timeout_seconds=60, concurrency=64):
             pass
 
     if len(set(responsive)) <= len(set(seeded_ips)):
-        ports = [22, 80, 443]
-        tcp_candidates = ips_to_scan[:128]
+        ports = [22, 80, 443, 445, 3389, 135, 139, 8080, 8443]
+        max_candidates = min(len(ips_to_scan), max(128, int(timeout_seconds * 32)))
+        tcp_candidates = ips_to_scan[:max_candidates]
+        tcp_timeout = max(0.2, min(0.5, timeout_seconds / 200))
         with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as ex:
             tcp_futs = {}
             for ip in tcp_candidates:
                 for p in ports:
-                    tcp_futs[ex.submit(_tcp_connect, ip, p, 0.5)] = (ip, p)
+                    tcp_futs[ex.submit(_tcp_connect, ip, p, tcp_timeout)] = (ip, p)
             try:
                 for fut in concurrent.futures.as_completed(tcp_futs, timeout=max(1, timeout_seconds / 2)):
                     try:

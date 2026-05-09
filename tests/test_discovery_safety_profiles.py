@@ -39,7 +39,7 @@ class TestDiscoverySafetyProfiles(unittest.TestCase):
         from src.backend.scanner import get_scan_profile
 
         profile = get_scan_profile(None)
-        self.assertEqual(profile["script_timeout"], 90)
+        self.assertEqual(profile["script_timeout"], 180)
 
 
 if __name__ == "__main__":

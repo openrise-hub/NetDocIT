@@ -68,7 +68,13 @@ def show_dashboard():
 
 def run_discovery(app=None, community=None, scan_profile="safe", script_timeout_seconds=None):
     from .backend.database import add_log_entry
-    add_log_entry("INFO", "Starting automated network discovery", "Scanner")
+    def _safe_log(level, message, source):
+        try:
+            add_log_entry(level, message, source)
+        except Exception:
+            return
+
+    _safe_log("INFO", "Starting automated network discovery", "Scanner")
 
     if app:
         app.state = "SCANNING"
@@ -83,14 +89,14 @@ def run_discovery(app=None, community=None, scan_profile="safe", script_timeout_
 
     safety_profile = discovery.get("safety_profile", {})
     if safety_profile:
-        add_log_entry(
+        _safe_log(
             "INFO",
             f"Active safety profile: {safety_profile.get('name', 'unknown')} ({safety_profile.get('time_window', 'unknown')})",
             "Scanner",
         )
 
     if discovery.get("scan_completion_state") == "blocked":
-        add_log_entry(
+        _safe_log(
             "WARN",
             f"Discovery blocked: {discovery.get('scan_completion_reason')}",
             "Scanner",
@@ -129,7 +135,7 @@ def run_discovery(app=None, community=None, scan_profile="safe", script_timeout_
     )
     rep.save_json(discovery, devices, dev_stats, str(runtime_path("inventory.json")), topology={"nodes": [], "edges": []})
 
-    add_log_entry("INFO", f"Discovery finished. Found {len(devices)} devices.", "Scanner")
+    _safe_log("INFO", f"Discovery finished. Found {len(devices)} devices.", "Scanner")
 
     if app:
         app.last_discovery_summary = discovery
