@@ -138,7 +138,6 @@ def run_discovery(app=None, community=None, scan_profile="safe", script_timeout_
             app.add_log(
                 f"[bold yellow]Discovery exceeded its timeout budget after {discovery.get('run_duration_seconds', 0):.1f}s."
             )
-        app.state = "MENU"
 
     return discovery
 
@@ -289,8 +288,6 @@ def main():
                                     from .backend.database import add_log_entry
                                     add_log_entry("ERROR", f"Discovery workflow failed: {exc}", "Scanner")
                                     app.add_log(f"[ERROR] Discovery workflow failed: {exc}")
-                                finally:
-                                    app.state = "MENU"
 
                             threading.Thread(target=run, daemon=True).start()
                         elif app.state == "SCANNING" and key in {"w", "s", "n", "f"}:

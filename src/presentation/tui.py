@@ -1,8 +1,9 @@
 from rich.layout import Layout
 from rich.panel import Panel
-from rich.console import Console
+from rich.console import Console, Group
 from datetime import datetime
 from rich.table import Table
+from rich.text import Text
 
 class DashboardApp:
     def __init__(self):
@@ -63,6 +64,8 @@ class DashboardApp:
 
     def _merge_live_device(self, item, source_tag):
         if not isinstance(item, dict):
+            return
+        if not self._scan_device_is_valid(item):
             return
         ip = item.get("ip")
         if not ip:
@@ -198,6 +201,26 @@ class DashboardApp:
                 lines.append(f"[dim]Credential fingerprint:[/dim] {fingerprint[:12]}...")
         return "\n".join(lines)
 
+    def _scan_device_is_valid(self, device):
+        if not isinstance(device, dict):
+            return False
+        ip = device.get("ip")
+        if not isinstance(ip, str) or not ip:
+            return False
+        try:
+            import ipaddress
+
+            ip_addr = ipaddress.IPv4Address(ip)
+        except Exception:
+            return False
+        return not (
+            ip_addr.is_multicast
+            or ip_addr.is_loopback
+            or ip_addr.is_unspecified
+            or ip_addr.is_reserved
+            or ip_addr.is_link_local
+        )
+
     def apply_scan_event(self, event, payload=None):
         payload = payload or {}
         if event == "phase":
@@ -258,7 +281,10 @@ class DashboardApp:
 
         visible_devices = self._live_visible_devices()
         if not visible_devices:
-            return f"[dim]No live findings yet.[/dim]\n[dim]{self._live_summary_line()}[/dim]"
+            return Group(
+                Text.from_markup("[dim]No live findings yet.[/dim]"),
+                Text.from_markup(f"[dim]{self._live_summary_line()}[/dim]"),
+            )
 
         if self.live_scan_selected_index >= len(visible_devices):
             self.live_scan_selected_index = len(visible_devices) - 1
@@ -286,7 +312,11 @@ class DashboardApp:
 
             table.add_row(selected_marker, str(device.get("ip", "?.?.?.?")), label, state, style=row_style)
 
-        return f"[bold]{self._live_summary_line()}[/bold]\n\n{table}"
+        return Group(
+            Text.from_markup(f"[bold]{self._live_summary_line()}[/bold]"),
+            Text(),
+            table,
+        )
 
     def handle_scanning_key(self, key):
         if key in ("w", "up"):

@@ -5,6 +5,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 python -m pip install --upgrade pip
+python -m pip install .
 python -m pip install pyinstaller
 
 $datas = @(
@@ -20,6 +21,8 @@ $args = @(
     "--onefile",
     "--name", "NetDocIT",
     "--distpath", $OutputDir,
+    "--hidden-import", "pyvis.network",
+    "--collect-data", "pyvis",
     "--add-data", $datas[0],
     "--add-data", $datas[1],
     "--add-data", $datas[2],
