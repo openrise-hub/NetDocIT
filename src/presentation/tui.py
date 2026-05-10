@@ -21,6 +21,7 @@ class DashboardApp:
         self.live_scan_sort_mode = "newest"
         self.live_scan_filter_mode = "all"
         self._live_scan_sequence = 0
+        self.live_scan_start_time = None
         self.last_discovery_summary = None
         self.scroll_index = 0 # position for table windowing
         self._init_layout()
@@ -149,7 +150,29 @@ class DashboardApp:
             f"sort: {self.live_scan_sort_mode} | filter: {self.live_scan_filter_mode}"
         )
 
+    def _phase_progress(self) -> int:
+        phase_map = {
+            "starting": 5, "icmp_ping_sweep": 30, "tcp_port_scan": 60,
+            "host_enrichment": 85, "completed": 100,
+        }
+        return phase_map.get(self.live_scan_phase, 10)
+
     def _scan_status_text(self):
+        pct = self._phase_progress()
+        elapsed = ""
+        if self.live_scan_start_time:
+            import time as _time
+            secs = _time.monotonic() - self.live_scan_start_time
+            if secs < 60:
+                elapsed = f"{secs:.0f}s elapsed"
+            else:
+                elapsed = f"{secs / 60:.1f}m elapsed"
+
+        bar_width = 20
+        filled = int(bar_width * pct / 100)
+        bar = f"[{'#' * filled}{'.' * (bar_width - filled)}]"
+        progress = f"{bar} {pct}% {elapsed}"
+
         completion_state = None
         timeout_seconds = None
         if isinstance(self.last_discovery_summary, dict):
@@ -167,7 +190,7 @@ class DashboardApp:
             budget_label = "budget: completed"
 
         return (
-            f"[bold yellow]Phase:[/bold yellow] {self.live_scan_phase}    "
+            f"[bold yellow]Phase:[/bold yellow] {self.live_scan_phase}    {progress}\n"
             f"[bold green]Found:[/bold green] {self.live_scan_counts['found']}    "
             f"[bold magenta]Enriched:[/bold magenta] {self.live_scan_counts['enriched']}    "
             f"[bold cyan]Sort:[/bold cyan] {self.live_scan_sort_mode}    "
@@ -255,6 +278,9 @@ class DashboardApp:
     def apply_scan_event(self, event, payload=None):
         payload = payload or {}
         if event == "phase":
+            if self.live_scan_start_time is None:
+                import time as _time
+                self.live_scan_start_time = _time.monotonic()
             self.live_scan_phase = str(payload.get("state", "running"))
             self.add_log(f"[bold cyan]{self.live_scan_phase.replace('_', ' ')}[/bold cyan]")
             return
@@ -284,6 +310,7 @@ class DashboardApp:
             return
 
         if event == "scan_completed":
+            self.live_scan_start_time = None
             summary = payload.get("summary")
             if isinstance(summary, dict):
                 self.last_discovery_summary = summary

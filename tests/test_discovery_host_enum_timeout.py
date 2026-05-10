@@ -33,8 +33,9 @@ class TestDiscoveryHostEnumTimeout(unittest.TestCase):
                      "priorities": {"high": [], "medium": [], "low": []},
                      "gateways": [],
                  }), \
-                 patch.object(discovery, "scan_appliances", return_value=[]), \
-                 patch.object(discovery, "get_subnets", return_value=["10.0.0.0/24"]), \
+                  patch.object(discovery, "scan_appliances", return_value=[]), \
+                  patch.object(discovery, "split_targets", return_value=([], ["10.0.0.10"])), \
+                  patch.object(discovery, "get_subnets", return_value=["10.0.0.0/24"]), \
                  patch.object(discovery, "run_ps_script", side_effect=_run_ps_side_effect) as run_ps_script:
 
                 discovery.discover_all(script_timeout_seconds=45)
