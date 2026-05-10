@@ -15,7 +15,7 @@ Interface: 192.168.0.186 --- 0x12
   192.168.0.255         ff-ff-ff-ff-ff-ff     static
   192.168.0.186         38-6b-1c-02-93-f4     dynamic
 """
-        mock_ping.return_value = {}
+        mock_ping.return_value = {"192.168.0.5": 0.001}
         results = _python_ping_sweep(["192.168.0.0/24"], timeout_seconds=1)
 
         ips = [item["ip"] for item in results]
