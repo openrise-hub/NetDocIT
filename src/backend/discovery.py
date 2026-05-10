@@ -839,7 +839,7 @@ if __name__ == "__main__":
     print("NetDocIT Environment Discovery Engine")
     print("=" * 40)
     
-    add_log_entry("info", "starting automated network discovery", "scanner")
+    add_log_entry("INFO", "starting automated network discovery", "Scanner")
     discovery = discover_all()
     
     print(f"Interfaces Detected: {len(discovery['interfaces'])}")

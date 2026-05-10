@@ -150,7 +150,7 @@ class DashboardApp:
             f"sort: {self.live_scan_sort_mode} | filter: {self.live_scan_filter_mode}"
         )
 
-    def _phase_progress(self) -> tuple[int, float]:
+    def _phase_progress(self) -> int:
         phase_map = {
             "starting": 5, "icmp_ping_sweep": 30, "tcp_port_scan": 60,
             "host_enrichment": 85, "completed": 100,
