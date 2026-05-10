@@ -23,21 +23,27 @@ def _get_known_ips() -> dict[str, dict[str, Any]]:
     """Query the database for all previously-sighted IPs with temporal state.
 
     Returns ``{ip: {lifecycle_state, seen_count, flap_count, canonical_asset_id}}``.
+    On a fresh database (tables not yet created) returns an empty dict.
     """
+    import sqlite3
+
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT s.ip, t.lifecycle_state, t.seen_count, t.flap_count,
-                   s.canonical_asset_id
-            FROM asset_sightings s
-            JOIN asset_temporal_state t
-              ON t.canonical_asset_id = s.canonical_asset_id
-            WHERE s.ip IS NOT NULL
-              AND s.canonical_asset_id IS NOT NULL
-            ORDER BY s.id DESC
-            """
-        )
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT s.ip, t.lifecycle_state, t.seen_count, t.flap_count,
+                       s.canonical_asset_id
+                FROM asset_sightings s
+                JOIN asset_temporal_state t
+                  ON t.canonical_asset_id = s.canonical_asset_id
+                WHERE s.ip IS NOT NULL
+                  AND s.canonical_asset_id IS NOT NULL
+                ORDER BY s.id DESC
+                """
+            )
+        except sqlite3.OperationalError:
+            return {}
         result: dict[str, dict[str, Any]] = {}
         for ip, state, count, flaps, asset_id in cursor.fetchall():
             if ip and ip not in result:
@@ -78,23 +84,31 @@ def split_targets(found_ips: list[str]) -> tuple[list[str], list[str]]:
 
 
 def get_cached_host_data(ips: list[str]) -> list[dict[str, Any]]:
-    """Return host-enum-style data for previously-enriched IPs."""
+    """Return host-enum-style data for previously-enriched IPs.
+
+    On a fresh database (tables not yet created) returns an empty list.
+    """
+    import sqlite3
+
     if not ips:
         return []
     placeholders = ",".join("?" for _ in ips)
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            f"""
-            SELECT s.ip, s.mac, s.hostname, a.primary_vendor, s.vendor
-            FROM asset_sightings s
-            JOIN canonical_assets a ON a.id = s.canonical_asset_id
-            WHERE s.ip IN ({placeholders})
-              AND s.hostname IS NOT NULL
-            ORDER BY s.id DESC
-            """,
-            ips,
-        )
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"""
+                SELECT s.ip, s.mac, s.hostname, a.primary_vendor, s.vendor
+                FROM asset_sightings s
+                JOIN canonical_assets a ON a.id = s.canonical_asset_id
+                WHERE s.ip IN ({placeholders})
+                  AND s.hostname IS NOT NULL
+                ORDER BY s.id DESC
+                """,
+                ips,
+            )
+        except sqlite3.OperationalError:
+            return []
         seen: set[str] = set()
         results: list[dict[str, Any]] = []
         for ip, mac, hostname, primary_vendor, vendor in cursor.fetchall():
