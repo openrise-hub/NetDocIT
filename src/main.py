@@ -1,5 +1,4 @@
 from .backend.discovery import discover_all
-from .backend.processor import get_system_status
 from .backend.database import ingest_live_data, get_devices_sorted_by_ip, get_device_counts_by_os, get_all_subnets, get_all_interfaces, get_all_routes
 from .presentation.topology import TopologyManager
 from .presentation.exporter import MarkdownGenerator

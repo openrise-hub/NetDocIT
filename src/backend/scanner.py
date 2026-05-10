@@ -191,10 +191,10 @@ def _python_ping_sweep(subnets, timeout_seconds=60, concurrency=64):
             responsive.append(ip)
 
     if len(set(responsive)) <= len(set(seeded_ips)):
-        ports = [22, 80, 443, 445, 3389, 135, 139, 8080, 8443]
-        max_candidates = min(len(ips_to_scan), max(128, int(timeout_seconds * 32)))
+        ports = [80, 443, 445, 3389, 22]
+        max_candidates = min(len(ips_to_scan), 128)
         tcp_candidates = ips_to_scan[:max_candidates]
-        tcp_timeout = max(0.2, min(0.5, timeout_seconds / 200))
+        tcp_timeout = 0.3
         with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as ex:
             tcp_futs = {}
             for ip in tcp_candidates:

@@ -1,13 +1,12 @@
 from datetime import datetime, timedelta
+from typing import Any
 from .database import get_all_subnets, save_subnet, get_last_scans
 from .config_parser import load_config
 
-def process_discovered_subnets(discovered):
-    """
-    Identifies new subnets and updates existing ones in the database.
-    """
+def process_discovered_subnets(discovered: list[dict[str, str]]) -> list[str]:
+    """Identifies new subnets and updates existing ones in the database."""
     existing = set(get_all_subnets())
-    new_networks = []
+    new_networks: list[str] = []
     
     for sn in discovered:
         cidr = sn['cidr']
@@ -20,16 +19,14 @@ def process_discovered_subnets(discovered):
         
     return new_networks
 
-def get_missing_subnets(discovered):
-    """
-    Identifies subnets that were previously known but are not in the current scan.
-    """
+def get_missing_subnets(discovered: list[dict[str, str]]) -> list[str]:
+    """Identifies subnets that were previously known but are not in the current scan."""
     discovered_cidrs = {sn['cidr'] for sn in discovered}
     existing_cidrs = set(get_all_subnets())
     
     return list(existing_cidrs - discovered_cidrs)
 
-def get_priority_subnets(discovered):
+def get_priority_subnets(discovered: list[dict[str, str]]) -> dict[str, list[str]]:
     config = load_config()
     interval = config.get("scan_interval_hours", 24)
     
@@ -37,7 +34,7 @@ def get_priority_subnets(discovered):
     now = datetime.now()
     threshold = now - timedelta(hours=interval)
     
-    priorities = {"high": [], "medium": [], "low": []}
+    priorities: dict[str, list[str]] = {"high": [], "medium": [], "low": []}
     
     for sn in discovered:
         cidr = sn['cidr']
@@ -47,7 +44,6 @@ def get_priority_subnets(discovered):
             priorities["high"].append(cidr)
         else:
             try:
-                # sqlite stores timestamps as strings
                 last_scan_dt = datetime.fromisoformat(last_scan_str)
                 if last_scan_dt < threshold:
                     priorities["medium"].append(cidr)
@@ -58,13 +54,12 @@ def get_priority_subnets(discovered):
                 
     return priorities
 
-def get_system_status():
+def get_system_status() -> dict[str, Any]:
     """Returns a summary of the current network inventory and scan readiness."""
     config = load_config()
     subnets = get_all_subnets()
     last_scans = get_last_scans()
     
-    # check scan based on networks and config
     has_subnets = len(subnets) > 0
     has_creds = len(config.get("credentials", {}).get("snmp", [])) > 0
     
