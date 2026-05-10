@@ -1,6 +1,7 @@
 import ipaddress
 import json
 import os
+from functools import lru_cache
 
 from .safety_policy import ScopePolicy
 from .runtime_paths import resource_path, runtime_path
@@ -17,6 +18,7 @@ def validate_config(config):
             
     return errors
 
+@lru_cache(maxsize=1)
 def load_config(config_path=None):
     """
     Loads the configuration.
