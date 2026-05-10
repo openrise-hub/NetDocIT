@@ -5,6 +5,7 @@ from .adaptive_scheduler import AdaptiveProbeScheduler, ProbeTask, PROBE_TYPES
 from .scanner import run_ps_script, get_scan_profile
 from .transports.tcp_scan import TcpPortScanner
 from .transports.fingerprint import classify_host_services
+from .incremental import split_targets, get_cached_host_data
 
 def _as_dict_list(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
@@ -640,42 +641,56 @@ def discover_all(
             return summary
 
     if found_ips and not sentinel_triggered and not scan_error:
-        host_enum_target_count = len(found_ips)
-        snmp_target_count = len(found_ips)
+        cached_ips, fresh_ips = split_targets(found_ips)
+        host_enum_target_count = len(fresh_ips)
+        snmp_target_count = len(fresh_ips)
+        cached_host_data = get_cached_host_data(cached_ips)
+        if cached_ips:
+            log(f"incremental: reusing {len(cached_ips)} cached hosts, scanning {len(fresh_ips)} fresh")
+
         if should_abort():
             sentinel_triggered = True
             log("Discovery aborted by sentinel signal before host enrichment.")
         else:
-            log(f"Running WMI/CIM enumeration on {len(found_ips)} hosts...")
-            emit_progress("phase", state="host_enrichment")
-            enrichment_run = scheduler.run(
-                [
-                    ProbeTask(
-                        "wmi",
-                        "global",
-                        "host-enum-batch",
-                        lambda: run_ps_script("host_enum.ps1", args=found_ips, timeout_seconds=script_timeout_seconds),
-                    ),
-                    ProbeTask(
-                        "snmp",
-                        "global",
-                        "snmp-batch",
-                        lambda: scan_appliances(found_ips, communities=community_override),
-                    ),
-                ]
-            )
-            probe_metrics = _merge_probe_metrics(probe_metrics, enrichment_run["metrics"])
+            if fresh_ips:
+                log(f"Running WMI/CIM enumeration on {len(fresh_ips)} hosts...")
+                emit_progress("phase", state="host_enrichment")
+                enrichment_run = scheduler.run(
+                    [
+                        ProbeTask(
+                            "wmi",
+                            "global",
+                            "host-enum-batch",
+                            lambda: run_ps_script("host_enum.ps1", args=fresh_ips, timeout_seconds=script_timeout_seconds),
+                        ),
+                        ProbeTask(
+                            "snmp",
+                            "global",
+                            "snmp-batch",
+                            lambda: scan_appliances(fresh_ips, communities=community_override),
+                        ),
+                    ]
+                )
+                probe_metrics = _merge_probe_metrics(probe_metrics, enrichment_run["metrics"])
 
-            wmi_results = enrichment_run["results"].get("wmi", [])
-            host_details = wmi_results[0] if wmi_results else []
-            if isinstance(host_details, list):
-                host_enum_result_count = len(_as_dict_list(host_details))
+                wmi_results = enrichment_run["results"].get("wmi", [])
+                host_details = wmi_results[0] if wmi_results else []
+                if isinstance(host_details, list):
+                    host_enum_result_count = len(_as_dict_list(host_details))
 
-            log("Attempting SNMP credential rotation on detected hardware...")
-            snmp_results = enrichment_run["results"].get("snmp", [])
-            snmp_details = snmp_results[0] if snmp_results else []
-            if isinstance(snmp_details, list):
-                snmp_result_count = len(_as_dict_list(snmp_details))
+                log("Attempting SNMP credential rotation on detected hardware...")
+                snmp_results = enrichment_run["results"].get("snmp", [])
+                snmp_details = snmp_results[0] if snmp_results else []
+                if isinstance(snmp_details, list):
+                    snmp_result_count = len(_as_dict_list(snmp_details))
+            else:
+                host_details = []
+                snmp_details = []
+                host_enum_result_count = 0
+                snmp_result_count = 0
+
+            host_details = (_as_dict_list(host_details) if isinstance(host_details, list) else []) + cached_host_data
+            host_enum_result_count += len(cached_host_data)
             emit_progress(
                 "host_details_ready",
                 host_data=[dict(item) for item in host_details] if isinstance(host_details, list) else [],
