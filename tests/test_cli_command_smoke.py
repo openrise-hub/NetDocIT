@@ -36,7 +36,7 @@ class TestCliCommandSmoke(unittest.TestCase):
             return importlib.import_module("src.main")
 
     @patch("src.backend.database.init_db")
-    def test_scan_command_runs_discovery_mapping_and_reporting(self, _mock_init_db):
+    def test_scan_command_runs_discovery(self, _mock_init_db):
         app_main = self._load_main_module()
 
         with patch.object(app_main, "run_reporting") as mock_run_reporting, \
@@ -61,8 +61,8 @@ class TestCliCommandSmoke(unittest.TestCase):
                 app_main.main()
 
             mock_run_discovery.assert_called_once()
-            mock_run_mapping.assert_called_once()
-            mock_run_reporting.assert_called_once()
+            mock_run_mapping.assert_not_called()
+            mock_run_reporting.assert_not_called()
 
     @patch("src.backend.database.init_db")
     def test_map_command_invokes_mapping(self, _mock_init_db):

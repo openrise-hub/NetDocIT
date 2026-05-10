@@ -114,9 +114,6 @@ def run_discovery(app=None, community=None, scan_profile="safe", script_timeout_
     tm = TopologyManager()
     tm.build_from_discovery(discovery)
 
-    if not QUIET:
-        tm.display_tui()
-
     tm.save_html_map(str(runtime_path("topology.html")))
 
     rep = MarkdownGenerator()
@@ -255,7 +252,7 @@ def main():
         import threading
         app = DashboardApp()
         try:
-            with Live(app, console=app.console, screen=True, auto_refresh=True, refresh_per_second=10):
+            with Live(app, console=app.console, screen=True, auto_refresh=True, refresh_per_second=4):
                 while True:
                     kbhit = getattr(msvcrt, "kbhit", None)
                     getch = getattr(msvcrt, "getch", None)
@@ -282,8 +279,6 @@ def main():
                                         scan_profile=args.profile,
                                         script_timeout_seconds=args.timeout,
                                     )
-                                    run_mapping(d)
-                                    run_reporting()
                                 except Exception as exc:
                                     from .backend.database import add_log_entry
                                     add_log_entry("ERROR", f"Discovery workflow failed: {exc}", "Scanner")
@@ -335,8 +330,6 @@ def main():
                     script_timeout_seconds=args.timeout,
                 )
                 live.update(app.render())
-                run_mapping(discovery)
-                run_reporting()
             q_print("\nScan and Reports successfully updated.")
         except KeyboardInterrupt:
             q_print("\n[bold yellow]Scan cancelled by user.[/bold yellow]")
