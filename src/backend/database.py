@@ -23,6 +23,7 @@ def get_db_connection():
 
 def init_db():
     with get_db_connection() as conn:
+        conn.execute("PRAGMA journal_mode=WAL")
         cursor = conn.cursor()
         
         # local interfaces detected on the host
@@ -362,6 +363,8 @@ def upsert_canonical_asset(canonical_key, preferred_label=None, primary_mac=None
                 updated_at = CURRENT_TIMESTAMP
         ''', (canonical_key, preferred_label, primary_mac, primary_vendor, primary_hostname, confidence, conflict_state))
         conn.commit()
+        cursor.execute('SELECT id FROM canonical_assets WHERE canonical_key = ?', (canonical_key,))
+        return cursor.fetchone()[0]
 
 def add_asset_alias(canonical_asset_id, alias_type, alias_value):
     with get_db_connection() as conn:
@@ -754,7 +757,7 @@ def ingest_canonical_assets(summary):
         primary_vendor = matched_asset.get('primary_vendor') or sighting.get('vendor')
         primary_hostname = matched_asset.get('primary_hostname') or sighting.get('hostname')
 
-        upsert_canonical_asset(
+        canonical_asset_id = upsert_canonical_asset(
             canonical_key,
             preferred_label=preferred_label,
             primary_mac=primary_mac,
@@ -763,11 +766,6 @@ def ingest_canonical_assets(summary):
             confidence=resolution['confidence'],
             conflict_state='resolved',
         )
-
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT id FROM canonical_assets WHERE canonical_key = ?', (canonical_key,))
-            canonical_asset_id = cursor.fetchone()[0]
 
         add_asset_sighting(
             canonical_asset_id,
