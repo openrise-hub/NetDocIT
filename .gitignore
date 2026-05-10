@@ -46,6 +46,7 @@ presentation/output/
 # Markdown
 *.md
 !README.md
+!Fixes-roadmap.md
 
 # AI Agent Skills, everyone should be able to choose their own skills.
 skills-lock.json

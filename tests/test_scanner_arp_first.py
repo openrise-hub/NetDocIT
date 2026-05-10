@@ -21,13 +21,13 @@ Interface: 192.168.0.186 --- 0x12
         self.assertIn("192.168.0.186", ips)
         self.assertNotIn("192.168.0.255", ips)
 
-    @patch("src.backend.scanner._icmp_ping")
+    @patch("src.backend.scanner.IcmpScanner.batch_ping")
     @patch("src.backend.scanner._iter_ips_for_subnets")
     @patch("src.backend.scanner._parse_arp_table")
-    def test_arp_seed_does_not_skip_active_probing(self, mock_arp, mock_iter, mock_icmp):
-        mock_arp.return_value = ["192.168.0.1"]
+    def test_arp_seed_does_not_skip_active_probing(self, mock_arp, mock_iter, mock_ping):
+        mock_arp.return_value = {"192.168.0.1": "AA:BB:CC:DD:EE:FF"}
         mock_iter.return_value = ["192.168.0.1", "192.168.0.10"]
-        mock_icmp.side_effect = lambda ip, _timeout_ms: ip == "192.168.0.10"
+        mock_ping.return_value = {"192.168.0.10": 0.05}
 
         results = _python_ping_sweep(["192.168.0.0/24"], timeout_seconds=2)
 

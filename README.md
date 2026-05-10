@@ -7,7 +7,7 @@ It collects interface and route information, performs live host discovery, enric
 
 For contributors, maintainers, and users forking this repository:
 
-- Python 3.14+
+- Python 3.10+
 - Windows PowerShell (for discovery scripts)
 
 For end users using the packaged installer:

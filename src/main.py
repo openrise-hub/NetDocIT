@@ -239,7 +239,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("command", nargs="*",
-                        help="Action to perform (D)iscover, (M)ap, (R)eport, (L)ogs, (S)chedule")
+                        help="Action: (D)iscover/scan, (M)ap, (R)eport, (L)ogs, (W)eb, (S)chedule")
     parser.add_argument("-v", "--version", action="version", version=f"NetDocIT v{__version__}")
     parser.add_argument("-q", "--quiet", "--silent", action="store_true", dest="quiet", help="Background mode")
     parser.add_argument("-t", "--time", default="08:00", help="Time for daily schedule (HH:mm)")
@@ -380,6 +380,11 @@ def main():
         for ts, lvl, msg, src in logs:
             table.add_row(ts, lvl, msg, src)
         console.print(table)
+
+    elif choice in ['w', 'web', 'serve']:
+        from .presentation.web.server import start_server
+        q_print("\nLaunching web dashboard...")
+        start_server(open_browser=True)
 
     elif choice in ['s', 'schedule']:
         if args.timeout is None:

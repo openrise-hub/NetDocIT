@@ -901,6 +901,20 @@ def _observation_rows(summary, scan_run_id):
             json.dumps(observation, separators=(',', ':'), sort_keys=True),
         ))
 
+    for svc in summary.get('service_data', []):
+        if not isinstance(svc, dict):
+            continue
+        rows.append((
+            scan_run_id,
+            'tcp',
+            None,
+            None,
+            None,
+            None,
+            None,
+            json.dumps(svc, separators=(',', ':'), sort_keys=True),
+        ))
+
     return rows
 
 def persist_probe_observations(summary, scan_run_id=None, batch_size=200):
