@@ -16,6 +16,8 @@ class DashboardApp:
         self.live_scan_phase = "idle"
         self.live_scan_counts = {"found": 0, "enriched": 0}
         self.live_scan_selected_index = 0
+        self.live_scan_page = 0
+        self.live_scan_page_size = 20
         self.live_scan_sort_mode = "newest"
         self.live_scan_filter_mode = "all"
         self._live_scan_sequence = 0
@@ -122,7 +124,14 @@ class DashboardApp:
         if not visible_devices:
             self.live_scan_selected_index = 0
             return
-        self.live_scan_selected_index = max(0, min(len(visible_devices) - 1, self.live_scan_selected_index + delta))
+        new_idx = self.live_scan_selected_index + delta
+        if new_idx < 0:
+            new_idx = 0
+        if new_idx >= len(visible_devices):
+            new_idx = len(visible_devices) - 1
+        self.live_scan_selected_index = new_idx
+        page_size = max(1, self.live_scan_page_size)
+        self.live_scan_page = new_idx // page_size
 
     def cycle_live_sort_mode(self):
         modes = ["newest", "ip", "hostname", "confidence"]
@@ -302,17 +311,28 @@ class DashboardApp:
         table.add_column("State", width=12)
 
         visible_devices = self._live_visible_devices()
+        total = len(visible_devices)
         if not visible_devices:
             return Group(
                 Text.from_markup("[dim]No live findings yet.[/dim]"),
                 Text.from_markup(f"[dim]{self._live_summary_line()}[/dim]"),
             )
 
+        page_size = max(1, self.live_scan_page_size)
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        if self.live_scan_page >= total_pages:
+            self.live_scan_page = total_pages - 1
+        start_idx = self.live_scan_page * page_size
+        page_devices = visible_devices[start_idx:start_idx + page_size]
+
         if self.live_scan_selected_index >= len(visible_devices):
             self.live_scan_selected_index = len(visible_devices) - 1
+        sel_in_page = self.live_scan_selected_index - start_idx
+        if sel_in_page < 0 or sel_in_page >= len(page_devices):
+            sel_in_page = 0
 
-        for index, device in enumerate(visible_devices[:20]):
-            selected = index == self.live_scan_selected_index
+        for i, device in enumerate(page_devices):
+            selected = i == sel_in_page
             selected_marker = ">" if selected else " "
             label = self._live_device_label(device)
             conf = self._live_confidence(device)
@@ -320,7 +340,6 @@ class DashboardApp:
             if int(device.get("_live_update_count", 1) or 1) > 1:
                 state = f"{state} +"
 
-            # color rows by confidence: high=green, med=yellow, low=red
             if conf >= 0.80:
                 row_color = "green"
             elif conf >= 0.50:
@@ -336,6 +355,7 @@ class DashboardApp:
 
         return Group(
             Text.from_markup(f"[bold]{self._live_summary_line()}[/bold]"),
+            Text.from_markup(f"[dim]Page {self.live_scan_page + 1}/{total_pages} — {total} devices[/dim]"),
             Text(),
             table,
         )
@@ -355,6 +375,20 @@ class DashboardApp:
             self.jump_selected_to_inventory()
         elif key == "m":
             self.copy_mac_of_selected()
+        elif key == "[":
+            self.live_scan_page = max(0, self.live_scan_page - 1)
+            self._snap_selection_to_page()
+        elif key == "]":
+            total_pages = max(1, (len(self._live_visible_devices()) + self.live_scan_page_size - 1) // self.live_scan_page_size)
+            self.live_scan_page = min(total_pages - 1, self.live_scan_page + 1)
+            self._snap_selection_to_page()
+
+    def _snap_selection_to_page(self):
+        start = self.live_scan_page * self.live_scan_page_size
+        end = start + self.live_scan_page_size
+        visible = self._live_visible_devices()
+        if self.live_scan_selected_index < start or self.live_scan_selected_index >= end:
+            self.live_scan_selected_index = min(start, len(visible) - 1)
 
     def copy_ip_of_selected(self):
         """Copy the selected device IP to the system clipboard (best-effort)."""
@@ -529,7 +563,7 @@ class DashboardApp:
                     vendor_val,
                     system_val
                 )
-            return Panel(table, title=f"[bold cyan]Inventory ({self.scroll_index}-{self.scroll_index + len(visible_devices)} of {len(self.devices)})[/bold cyan]", border_style="cyan")
+            return Panel(table, title=f"[bold cyan]Inventory ({self.scroll_index + 1}-{self.scroll_index + len(visible_devices)} of {len(self.devices)})[/bold cyan]", border_style="cyan")
 
         elif self.state == "LOGS":
             from rich.table import Table
@@ -567,9 +601,9 @@ class DashboardApp:
         
         hints = "1-3: Select View | Q: Quit"
         if self.state == "INVENTORY":
-            hints = "[W/S] Scroll | Esc: Back | Q: Quit"
+            hints = "[W/S] Scroll | [ : PgUp | ] : PgDn | Esc: Back | Q: Quit"
         elif self.state == "SCANNING":
-            hints = "[W/S] Select | N: Sort | F: Filter | C: Copy IP | M: Copy MAC | I: Inventory | Esc: Back | Q: Quit"
+            hints = "[W/S] Select | N: Sort | F: Filter | [ : PgUp | ] : PgDn | C: Copy IP | M: Copy MAC | I: Inventory | Esc: Back | Q: Quit"
         elif self.state == "LOGS":
             hints = "Esc: Back | Q: Quit"
             

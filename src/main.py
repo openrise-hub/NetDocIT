@@ -291,7 +291,7 @@ def main():
                                     app.add_log(f"[ERROR] Discovery workflow failed: {exc}")
 
                             threading.Thread(target=run, daemon=True).start()
-                        elif app.state == "SCANNING" and key in {"w", "s", "n", "f"}:
+                        elif app.state == "SCANNING" and key in {"w", "s", "n", "f", "c", "i", "m", "[", "]"}:
                             app.handle_scanning_key(key)
                         elif key == '2':
                             app.state = "INVENTORY"
@@ -302,6 +302,11 @@ def main():
                         elif key == 's' and app.state == "INVENTORY":
                             if app.scroll_index + 20 < len(app.devices):
                                 app.scroll_index += 5
+                        elif key == '[' and app.state == "INVENTORY":
+                            app.scroll_index = max(0, app.scroll_index - 20)
+                        elif key == ']' and app.state == "INVENTORY":
+                            if app.scroll_index + 20 < len(app.devices):
+                                app.scroll_index += 20
                         elif key == '3':
                             from .backend.database import get_logs
                             app.state = "LOGS"
