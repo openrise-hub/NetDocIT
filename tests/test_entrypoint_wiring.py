@@ -1,6 +1,10 @@
 import pathlib
-import tomllib
 import unittest
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 
 
 class TestEntrypointWiring(unittest.TestCase):

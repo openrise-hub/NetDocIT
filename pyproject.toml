@@ -10,7 +10,8 @@ dependencies = [
     "networkx>=3.4",
     "pysnmp>=7.1.15",
     "pyvis>=0.3.2",
-    "rich>=14.3.3"
+    "rich>=14.3.3",
+    "tomli>=2.0; python_version < '3.11'"
 ]
 
 [project.scripts]

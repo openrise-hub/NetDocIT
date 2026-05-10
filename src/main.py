@@ -1,10 +1,11 @@
 from .backend.discovery import discover_all
 from .backend.processor import get_system_status
-from .backend.database import ingest_live_data, get_devices_sorted_by_ip, get_device_counts_by_os
+from .backend.database import ingest_live_data, get_devices_sorted_by_ip, get_device_counts_by_os, get_all_subnets, get_all_interfaces, get_all_routes
 from .presentation.topology import TopologyManager
 from .presentation.exporter import MarkdownGenerator
 from .presentation.tui import DashboardApp
 from .backend.runtime_paths import runtime_path
+import time
 
 
 def is_admin():
@@ -148,9 +149,6 @@ def run_discovery(app=None, community=None, scan_profile="safe", script_timeout_
     return discovery
 
 
-from .backend.database import ingest_live_data, get_devices_sorted_by_ip, get_device_counts_by_os, get_all_subnets, get_all_interfaces, get_all_routes
-
-
 def run_mapping(discovery_data=None):
     if discovery_data is None:
         discovery_data = {
@@ -173,7 +171,6 @@ def run_reporting():
     devices = get_devices_sorted_by_ip()
     dev_stats = get_device_counts_by_os()
     subnets = get_all_subnets()
-    # Construct a minimal discovery-like payload for reporting/export when no live discovery is present
     discovery_data = {
         "interfaces": get_all_interfaces(),
         "routes": get_all_routes(),
@@ -193,8 +190,6 @@ def run_reporting():
 
 
 __version__ = "0.1.0"
-
-import time
 
 try:
     import msvcrt
@@ -296,7 +291,7 @@ def main():
                                     app.add_log(f"[ERROR] Discovery workflow failed: {exc}")
 
                             threading.Thread(target=run, daemon=True).start()
-                        elif app.state == "SCANNING" and key in {"w", "s", "n", "f"}:
+                        elif app.state == "SCANNING" and key in {"w", "s", "n", "f", "c", "i", "m", "[", "]"}:
                             app.handle_scanning_key(key)
                         elif key == '2':
                             app.state = "INVENTORY"
@@ -307,6 +302,11 @@ def main():
                         elif key == 's' and app.state == "INVENTORY":
                             if app.scroll_index + 20 < len(app.devices):
                                 app.scroll_index += 5
+                        elif key == '[' and app.state == "INVENTORY":
+                            app.scroll_index = max(0, app.scroll_index - 20)
+                        elif key == ']' and app.state == "INVENTORY":
+                            if app.scroll_index + 20 < len(app.devices):
+                                app.scroll_index += 20
                         elif key == '3':
                             from .backend.database import get_logs
                             app.state = "LOGS"
