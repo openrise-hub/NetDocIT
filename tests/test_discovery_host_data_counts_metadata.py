@@ -27,8 +27,9 @@ class TestDiscoveryHostDataCountsMetadata(unittest.TestCase):
                      "priorities": {"high": [], "medium": [], "low": []},
                      "gateways": [],
                  }), \
-                 patch.object(discovery, "scan_appliances", return_value=[{"ip": "10.0.0.10"}, {"ip": "10.0.0.11"}]), \
-                 patch.object(discovery, "run_ps_script", side_effect=[
+                  patch.object(discovery, "scan_appliances", return_value=[{"ip": "10.0.0.10"}, {"ip": "10.0.0.11"}]), \
+                  patch.object(discovery, "split_targets", return_value=([], ["10.0.0.10", "10.0.0.11"])), \
+                  patch.object(discovery, "run_ps_script", side_effect=[
                      [{"ip": "10.0.0.10"}, {"ip": "10.0.0.11"}],
                      [{"ip": "10.0.0.10"}, {"ip": "10.0.0.11"}],
                  ]):
