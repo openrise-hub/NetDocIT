@@ -320,13 +320,9 @@ def main():
         return
 
     choice = cmd_list[0].lower()
-    sched_time = args.time
-    if choice == 'schedule' and len(cmd_list) > 1:
+    sched_time = args.time if args.time else '08:00'
+    if choice in ('s', 'schedule') and len(cmd_list) > 1:
         sched_time = cmd_list[1]
-    elif choice.startswith('schedule '):
-        parts = choice.split(' ')
-        choice = parts[0]
-        sched_time = parts[1]
 
     if choice in ['d', 'discover', 'scan', 'all', '1']:
         from rich.live import Live
