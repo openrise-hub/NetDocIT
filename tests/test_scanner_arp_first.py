@@ -5,8 +5,9 @@ from src.backend.scanner import _python_ping_sweep
 
 
 class TestScannerArpFirst(unittest.TestCase):
+    @patch("src.backend.scanner.IcmpScanner.batch_ping")
     @patch("src.backend.scanner.subprocess.run")
-    def test_arp_table_filters_broadcast_entries(self, mock_run):
+    def test_arp_table_filters_broadcast_entries(self, mock_run, mock_ping):
         mock_run.return_value.stdout = """
 Interface: 192.168.0.186 --- 0x12
   Internet Address      Physical Address      Type
@@ -14,6 +15,7 @@ Interface: 192.168.0.186 --- 0x12
   192.168.0.255         ff-ff-ff-ff-ff-ff     static
   192.168.0.186         38-6b-1c-02-93-f4     dynamic
 """
+        mock_ping.return_value = {}
         results = _python_ping_sweep(["192.168.0.0/24"], timeout_seconds=1)
 
         ips = [item["ip"] for item in results]
