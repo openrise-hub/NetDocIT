@@ -202,7 +202,7 @@ class DashboardApp:
             lines.append("[bold]Open TCP Ports[/bold]")
             for entry in sorted(open_entries, key=lambda e: e.get("port", 0)):
                 port = entry.get("port")
-                svc = PORT_SERVICE_MAP.get(port, "")
+                svc = PORT_SERVICE_MAP.get(port, "") if isinstance(port, int) else ""
                 banner = entry.get("banner")
                 rtt = entry.get("rtt_ms")
                 if banner:
